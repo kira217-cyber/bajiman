@@ -77,6 +77,7 @@ import checkInRewardClientRoutes from "./routes/checkInRewardClientRoutes.js";
 import wheelRewardAdminRoutes from "./routes/wheelRewardAdminRoutes.js";
 import wheelSpinRoutes from "./routes/wheelSpinRoutes.js";
 import wheelTermsConditionRoutes from "./routes/wheelTermsConditionRoutes.js";
+import downloadHeaderRoutes from "./routes/downloadHeaderRoutes.js";
 
 dotenv.config();
 
@@ -108,6 +109,7 @@ app.use("/api", checkInRewardClientRoutes);
 app.use("/api", wheelRewardAdminRoutes);
 app.use("/api", wheelSpinRoutes);
 app.use("/api", wheelTermsConditionRoutes);
+app.use("/api", downloadHeaderRoutes);
 app.use("/api", affWithdrawRequestRoutes);
 
 /* ✅ Deposit System Routes */

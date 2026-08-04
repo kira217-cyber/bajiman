@@ -16,6 +16,7 @@ import { selectGlobalGameLoaded } from "../features/globalGame/globalGameSelecto
 import Footer from "../components/Footer/Footer";
 import CheckInLauncher from "../components/CheckInLauncher/CheckInLauncher";
 import WheelLauncher from "../components/WheelLauncher/WheelLauncher";
+import DownloadAppBanner from "../components/DownloadAppBanner/DownloadAppBanner";
 
 const RootLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -60,6 +61,7 @@ const RootLayout = () => {
           desktopSidebarOpen ? "lg:pl-[250px]" : ""
         }`}
       >
+        <DownloadAppBanner />
         <Outlet />
       </main>
       <Footer desktopOpen={desktopSidebarOpen} />

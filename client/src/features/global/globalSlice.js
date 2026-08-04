@@ -23,6 +23,7 @@ const initialState = {
   socialLinks: [],
   checkInReward: { launcherIconUrl: "", isActive: false },
   wheelReward: { launcherIconUrl: "", isActive: false },
+  downloadHeader: null,
 
   footerSetting: null,
   navbarColorSetting: null,
@@ -53,6 +54,7 @@ const globalSlice = createSlice({
       state.socialLinks = [];
       state.checkInReward = { launcherIconUrl: "", isActive: false };
       state.wheelReward = { launcherIconUrl: "", isActive: false };
+      state.downloadHeader = null;
 
       state.footerSetting = null;
       state.navbarColorSetting = null;
@@ -98,6 +100,7 @@ const globalSlice = createSlice({
           launcherIconUrl: "",
           isActive: false,
         };
+        state.downloadHeader = payload.downloadHeader || null;
 
         state.footerSetting = payload.footerSetting || null;
         state.navbarColorSetting = payload.navbarColorSetting || null;

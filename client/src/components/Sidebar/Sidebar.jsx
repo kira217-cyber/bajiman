@@ -22,6 +22,7 @@ import {
   Percent,
   ShieldCheck,
   MessageCircle,
+  Download,
 } from "lucide-react";
 
 import { useLanguage } from "../../Context/LanguageProvider";
@@ -168,6 +169,13 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
         en: "Winner List",
         icon: Award,
         path: "/",
+      },
+      {
+        key: "app-download",
+        bn: "অ্যাপ ডাউনলোড",
+        en: "App Download",
+        icon: Download,
+        path: "https://apps.bajiman.com/",
       },
     ],
     [],
@@ -416,6 +424,7 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
     topMenus.find((item) => item.key === "guide"),
     contactMenu,
     topMenus.find((item) => item.key === "winner"),
+    topMenus.find((item) => item.key === "app-download"),
     ...otherMenus,
   ].filter(Boolean);
 

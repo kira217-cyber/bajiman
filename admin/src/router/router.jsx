@@ -63,6 +63,7 @@ import CheckInReward from "../pages/CheckInReward/CheckInReward";
 import WheelOfFortuneReward from "../pages/WheelOfFortuneReward/WheelOfFortuneReward";
 import WheelTermsCondition from "../pages/WheelTermsCondition/WheelTermsCondition";
 import RewardHistory from "../pages/RewardHistory/RewardHistory";
+import DownloadHeaderController from "../pages/DownloadHeaderController/DownloadHeaderController";
 import AffiliateRegisterSetting from "../pages/AffiliateRegisterSetting/AffiliateRegisterSetting";
 import AffiliateLoginSetting from "../pages/AffiliateLoginSetting/AffiliateLoginSetting";
 import AffiliateSliderSetting from "../pages/AffiliateSliderSetting/AffiliateSliderSetting";
@@ -480,6 +481,14 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="social-link">
             <AddSocialLink />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "download-header",
+        element: (
+          <PrivateRoute permKey="download-header">
+            <DownloadHeaderController />
           </PrivateRoute>
         ),
       },

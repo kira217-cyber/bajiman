@@ -28,6 +28,7 @@ import {
   FaHotjar,
   FaGift,
   FaLink,
+  FaDownload,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
 import {
@@ -401,6 +402,12 @@ const Sidebar = () => {
         to: "/social-link",
         icon: <FaShareAlt />,
         text: "Social Link",
+      },
+      {
+        key: "download-header",
+        to: "/download-header",
+        icon: <FaDownload />,
+        text: "Download App",
       },
     ],
     [],

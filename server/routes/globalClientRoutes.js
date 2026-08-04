@@ -18,6 +18,7 @@ import ForgetPasswordModalSetting from "../models/ForgetPasswordModalSetting.js"
 import SocialLink from "../models/SocialLink.js";
 import CheckInRewardSetting from "../models/CheckInRewardSetting.js";
 import WheelTermsCondition from "../models/WheelTermsCondition.js";
+import DownloadHeader from "../models/DownloadHeader.js";
 
 const router = express.Router();
 
@@ -202,6 +203,22 @@ const formatWheelReward = (req, item) => {
   };
 };
 
+const formatDownloadHeader = (req, item) => {
+  if (!item) return null;
+
+  return {
+    isActive: item.isActive === true,
+    appNameBn: item.appNameBn || "",
+    appNameEn: item.appNameEn || "",
+    titleBn: item.titleBn || "",
+    titleEn: item.titleEn || "",
+    btnTextBn: item.btnTextBn || "",
+    btnTextEn: item.btnTextEn || "",
+    iconUrl: item.iconUrl ? buildFileUrl(req, item.iconUrl) : "",
+    apkUrl: item.apkUrl ? buildFileUrl(req, item.apkUrl) : "",
+  };
+};
+
 router.get("/site-data", async (req, res) => {
   try {
     const [
@@ -223,6 +240,7 @@ router.get("/site-data", async (req, res) => {
       socialLinks,
       checkInRewardSetting,
       wheelTermsSetting,
+      downloadHeaderSetting,
     ] = await Promise.all([
       SiteIdentify.findOne({ status: "active" }).sort({ createdAt: -1 }).lean(),
       Notice.findOne({ status: "active" }).sort({ createdAt: -1 }).lean(),
@@ -282,6 +300,8 @@ router.get("/site-data", async (req, res) => {
       WheelTermsCondition.findOne({ settingKey: "wheel-terms-condition" })
         .select("launcherIcon isActive")
         .lean(),
+
+      DownloadHeader.findOne().lean(),
     ]);
 
     return res.status(200).json({
@@ -313,6 +333,7 @@ router.get("/site-data", async (req, res) => {
         socialLinks: socialLinks.map((item) => formatSocialLink(req, item)),
         checkInReward: formatCheckInReward(req, checkInRewardSetting),
         wheelReward: formatWheelReward(req, wheelTermsSetting),
+        downloadHeader: formatDownloadHeader(req, downloadHeaderSetting),
         modalColorSetting,
         transactionHistoryColorSetting,
         bottomNavigationColorSetting,

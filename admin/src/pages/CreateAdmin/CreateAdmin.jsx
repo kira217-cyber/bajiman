@@ -222,6 +222,11 @@ const CreateAdmin = () => {
       },
       { key: "social-link", label: "Social Link", path: "/social-link" },
       {
+        key: "download-header",
+        label: "Download App",
+        path: "/download-header",
+      },
+      {
         key: "check-in-reward",
         label: "Check-In Reward",
         path: "/check-in-reward",
