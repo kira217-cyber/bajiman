@@ -83,6 +83,10 @@ dotenv.config();
 
 const app = express();
 
+// behind an nginx/Cloudflare reverse proxy — trust X-Forwarded-Proto so
+// req.protocol/req.secure resolve to "https" correctly instead of "http"
+app.set("trust proxy", 1);
+
 connectDB();
 
 app.use(cors());

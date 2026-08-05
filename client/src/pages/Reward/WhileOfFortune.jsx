@@ -29,6 +29,7 @@ import { api } from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import { selectIsAuth } from "../../features/auth/authSelectors";
 import LoginModal from "../../components/LoginModal/LoginModal";
+import SiteLoader from "../../components/SiteLoader/SiteLoader";
 
 const SPIN_DURATION = 5200;
 
@@ -427,7 +428,7 @@ const WhileOfFortune = () => {
   };
 
   if (loading) {
-    return <WheelLoading />;
+    return <SiteLoader />;
   }
 
   if (!wheels.length) {
@@ -1415,19 +1416,5 @@ const SpinResultModal = ({
     </motion.div>
   );
 };
-
-/* ======================================================
-   LOADING
-====================================================== */
-
-const WheelLoading = () => (
-  <div className="flex min-h-screen items-center justify-center bg-[#570052]">
-    <div className="text-center text-white">
-      <FaSyncAlt className="mx-auto animate-spin text-5xl text-[#ffc800]" />
-
-      <p className="mt-4 text-sm font-bold">Loading Wheel...</p>
-    </div>
-  </div>
-);
 
 export default WhileOfFortune;

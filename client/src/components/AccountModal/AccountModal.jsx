@@ -9,7 +9,7 @@ import {
   Lock,
   Inbox,
   MessageCircle,
-  Mail,
+  Send,
   LogOut,
   X,
   Landmark,
@@ -206,7 +206,7 @@ const AccountModal = ({
 
     contact: isBangla ? "যোগাযোগ" : "Contact",
     whatsapp: isBangla ? "হোয়াটসঅ্যাপ" : "WhatsApp",
-    email: isBangla ? "ইমেইল" : "Email",
+    telegram: isBangla ? "টেলিগ্রাম" : "Telegram",
 
     logout: isBangla ? setting.logoutTextBn : setting.logoutTextEn,
     logoutSuccess: isBangla ? "সফলভাবে লগআউট হয়েছে" : "Logged out successfully",
@@ -405,29 +405,23 @@ const AccountModal = ({
     [t.personalInfo, t.resetPassword, t.inbox],
   );
 
-  const contactItems = useMemo(() => {
-    const arr = [];
-
-    if (setting.whatsappLink) {
-      arr.push({
+  const contactItems = useMemo(
+    () => [
+      {
         title: t.whatsapp,
         icon: MessageCircle,
-        to: setting.whatsappLink,
+        to: "https://wa.me/447311133922",
         external: true,
-      });
-    }
-
-    if (setting.emailLink) {
-      arr.push({
-        title: t.email,
-        icon: Mail,
-        to: setting.emailLink,
+      },
+      {
+        title: t.telegram,
+        icon: Send,
+        to: "https://t.me/+447311133922",
         external: true,
-      });
-    }
-
-    return arr;
-  }, [setting.whatsappLink, setting.emailLink, t.whatsapp, t.email]);
+      },
+    ],
+    [t.whatsapp, t.telegram],
+  );
 
   const Section = ({ title, children }) => (
     <div

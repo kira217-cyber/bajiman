@@ -67,8 +67,9 @@ const DownloadAppBanner = () => {
       </p>
 
       <a
-        href={downloadHeader.apkUrl}
-        download
+        href="https://apps.bajiman.com/"
+        target="_blank"
+        rel="noopener noreferrer"
         className="shrink-0 cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-[13px] font-extrabold text-white transition hover:bg-red-700 active:scale-95"
       >
         {btnText}

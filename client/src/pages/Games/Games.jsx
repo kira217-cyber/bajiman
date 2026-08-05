@@ -12,6 +12,7 @@ import {
   selectGlobalGameLoaded,
 } from "../../features/globalGame/globalGameSelectors";
 import { selectHomePageContentColorSetting } from "../../features/global/globalSelectors";
+import JackpotBanner from "../../components/JackpotBanner/JackpotBanner";
 
 const PER_PAGE = 24;
 
@@ -169,8 +170,10 @@ const Games = () => {
       style={{ backgroundColor: colors.pageBg }}
     >
       <div className="mx-auto w-full max-w-[480px] px-2 md:max-w-[1200px] md:px-0">
+        <JackpotBanner />
+
         <div className="mb-4 flex items-center gap-2">
-          <div className="no-scrollbar flex flex-1 gap-[10px] overflow-x-auto">
+          <div className="provider-scroll flex flex-1 gap-[10px] overflow-x-auto pb-1">
             <button
               type="button"
               onClick={() => handleProviderChange("all")}
@@ -426,13 +429,34 @@ const Games = () => {
       </div>
 
       <style>{`
-        .no-scrollbar::-webkit-scrollbar {
+        .provider-scroll::-webkit-scrollbar {
           display: none;
         }
 
-        .no-scrollbar {
+        .provider-scroll {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+
+        @media (min-width: 768px) {
+          .provider-scroll::-webkit-scrollbar {
+            display: block;
+            height: 5px;
+          }
+
+          .provider-scroll::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 20px;
+          }
+
+          .provider-scroll::-webkit-scrollbar-track {
+            background: transparent;
+          }
+
+          .provider-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+          }
         }
       `}</style>
     </section>

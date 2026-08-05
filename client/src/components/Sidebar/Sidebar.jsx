@@ -29,6 +29,7 @@ import { useLanguage } from "../../Context/LanguageProvider";
 import PromotionModal from "./../PromotionModal/PromotionModal";
 import ReferAndRedeemModal from "../ReferAndRedeemModal/ReferAndRedeemModal";
 import LoginModal from "../LoginModal/LoginModal";
+import ContactUsModal from "../ContactUsModal/ContactUsModal";
 import { selectIsAuth } from "../../features/auth/authSelectors";
 
 import {
@@ -112,6 +113,7 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [referRedeemOpen, setReferRedeemOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [contactUsOpen, setContactUsOpen] = useState(false);
 
   const [desktopHoverKey, setDesktopHoverKey] = useState("");
   const [desktopChildHover, setDesktopChildHover] = useState("");
@@ -158,8 +160,8 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
       },
       {
         key: "guide",
-        bn: "Responsible-Guide",
-        en: "Responsible-Guide",
+        bn: "বাজিম্যান গাইড",
+        en: "Bajiman Guide",
         icon: ShieldCheck,
         path: "__guide__",
       },
@@ -314,15 +316,7 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
       bn: "যোগাযোগ করুন",
       en: "Contact Us",
       icon: MessageCircle,
-      children: items.map((item) => ({
-        id: item._id,
-        name: {
-          bn: item?.name?.bn || item?.name?.en || "",
-          en: item?.name?.en || item?.name?.bn || "",
-        },
-        image: item.iconUrl,
-        path: item.url,
-      })),
+      path: "__contactUs__",
     };
   }, [socialLinks]);
 
@@ -369,6 +363,12 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
 
     if (path === "__guide__") {
       window.open(GUIDE_URL, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    if (path === "__contactUs__") {
+      closeMobile();
+      setContactUsOpen(true);
       return;
     }
 
@@ -441,6 +441,11 @@ const Sidebar = ({ open, setOpen, desktopOpen, setDesktopOpen }) => {
       />
 
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+
+      <ContactUsModal
+        open={contactUsOpen}
+        onClose={() => setContactUsOpen(false)}
+      />
 
       <div
         onClick={closeMobile}
