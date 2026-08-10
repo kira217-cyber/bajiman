@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Eye, EyeOff, Search, X, CheckCircle } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Search,
+  X,
+  CheckCircle,
+} from "lucide-react";
 import { useLocation } from "react-router";
 import { useLanguage } from "../../Context/LanguageProvider";
 
@@ -70,6 +77,16 @@ const getRefFromSearch = (search = "") => {
     .slice(0, 6);
 };
 
+const getErrorField = (message = "") => {
+  const lower = String(message || "").toLowerCase();
+
+  if (lower.includes("username")) return "username";
+  if (lower.includes("phone")) return "phone";
+  if (lower.includes("otp")) return "otp";
+
+  return null;
+};
+
 const normalizePhoneForBd = (phone = "") => {
   const cleanPhone = String(phone || "").replace(/\D/g, "");
 
@@ -115,6 +132,13 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [refCode, setRefCode] = useState("");
+
+  const [errors, setErrors] = useState({
+    username: "",
+    phone: "",
+    otp: "",
+  });
+  const [generalError, setGeneralError] = useState("");
 
   const [otpInput, setOtpInput] = useState("");
   const [otpSending, setOtpSending] = useState(false);
@@ -220,6 +244,8 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     setCurrencyOpen(false);
     setCountryOpen(false);
     setSearch("");
+    setErrors({ username: "", phone: "", otp: "" });
+    setGeneralError("");
     resetOtp();
   };
 
@@ -355,14 +381,18 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     ? normalizePhoneForBd(cleanPhone)
     : cleanPhone;
 
+  const passwordLengthValid =
+    cleanPassword.length >= 6 && cleanPassword.length <= 20;
+  const passwordHasAlphabet = /[a-zA-Z]/.test(cleanPassword);
+  const passwordHasNumber = /\d/.test(cleanPassword);
+  const passwordValid =
+    passwordLengthValid && passwordHasAlphabet && passwordHasNumber;
+
   const canSubmit =
     cleanUsername.length >= 4 &&
     cleanUsername.length <= 15 &&
     /^[a-z0-9]+$/.test(cleanUsername) &&
-    cleanPassword.length >= 6 &&
-    cleanPassword.length <= 20 &&
-    /[a-zA-Z]/.test(cleanPassword) &&
-    /\d/.test(cleanPassword) &&
+    passwordValid &&
     cleanPhone.length >= 6 &&
     (!isBangladeshSelected || otpInput.trim().length > 0);
 
@@ -370,12 +400,12 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     if (!isBangladeshSelected) return;
 
     if (!cleanPhone) {
-      toast.error(text.enterPhone);
+      setErrors((prev) => ({ ...prev, phone: text.enterPhone }));
       return;
     }
 
     if (cleanPhone.length < 6) {
-      toast.error(text.phoneLength);
+      setErrors((prev) => ({ ...prev, phone: text.phoneLength }));
       return;
     }
 
@@ -383,6 +413,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
       setOtpSending(true);
       setOtpInput("");
       setOtpExpiresAt(0);
+      setErrors((prev) => ({ ...prev, phone: "" }));
 
       const { data } = await api.post(
         "/api/users/forgot-password/register/send-otp",
@@ -410,9 +441,13 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
         setCountdown(Number(waitSeconds));
       }
 
-      toast.error(
-        error?.response?.data?.message || error?.message || "OTP send failed",
-      );
+      setErrors((prev) => ({
+        ...prev,
+        phone:
+          error?.response?.data?.message ||
+          error?.message ||
+          "OTP send failed",
+      }));
     } finally {
       setOtpSending(false);
     }
@@ -458,77 +493,59 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     },
 
     onError: (error) => {
-      toast.error(
+      const message =
         error?.response?.data?.message ||
-          error?.message ||
-          (isBangla ? "রেজিস্ট্রেশন ব্যর্থ হয়েছে" : "Registration failed"),
-      );
+        error?.message ||
+        (isBangla ? "রেজিস্ট্রেশন ব্যর্থ হয়েছে" : "Registration failed");
+      const field = getErrorField(message);
+
+      if (field) {
+        setErrors((prev) => ({ ...prev, [field]: message }));
+      } else {
+        setGeneralError(message);
+      }
     },
   });
 
   const validateForm = () => {
+    const newErrors = { username: "", phone: "", otp: "" };
+
     if (!cleanUsername) {
-      toast.error(text.enterUsername);
-      return false;
-    }
-
-    if (cleanUsername.length < 4 || cleanUsername.length > 15) {
-      toast.error(text.usernameLength);
-      return false;
-    }
-
-    if (!/^[a-z0-9]+$/.test(cleanUsername)) {
-      toast.error(text.usernameInvalid);
-      return false;
-    }
-
-    if (!cleanPassword) {
-      toast.error(text.enterPassword);
-      return false;
-    }
-
-    if (cleanPassword.length < 6 || cleanPassword.length > 20) {
-      toast.error(text.passwordLength);
-      return false;
-    }
-
-    if (!/[a-zA-Z]/.test(cleanPassword)) {
-      toast.error(text.passwordAlphabet);
-      return false;
-    }
-
-    if (!/\d/.test(cleanPassword)) {
-      toast.error(text.passwordNumber);
-      return false;
+      newErrors.username = text.enterUsername;
+    } else if (cleanUsername.length < 4 || cleanUsername.length > 15) {
+      newErrors.username = text.usernameLength;
+    } else if (!/^[a-z0-9]+$/.test(cleanUsername)) {
+      newErrors.username = text.usernameInvalid;
     }
 
     if (!cleanPhone) {
-      toast.error(text.enterPhone);
-      return false;
-    }
-
-    if (cleanPhone.length < 6) {
-      toast.error(text.phoneLength);
-      return false;
+      newErrors.phone = text.enterPhone;
+    } else if (cleanPhone.length < 6) {
+      newErrors.phone = text.phoneLength;
     }
 
     if (isBangladeshSelected) {
       if (!otpExpiresAt || Date.now() > otpExpiresAt) {
-        toast.error(text.otpExpired);
-        return false;
-      }
-
-      if (!otpInput.trim()) {
-        toast.error(text.enterOtp);
-        return false;
+        newErrors.otp = text.otpExpired;
+      } else if (!otpInput.trim()) {
+        newErrors.otp = text.enterOtp;
       }
     }
 
-    return true;
+    setErrors(newErrors);
+
+    return (
+      !newErrors.username &&
+      passwordValid &&
+      !newErrors.phone &&
+      !newErrors.otp
+    );
   };
 
   const handleSubmit = async () => {
     if (registerMutation.isPending) return;
+
+    setGeneralError("");
     if (!validateForm()) return;
 
     try {
@@ -546,11 +563,13 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
         otp: isBangladeshSelected ? otpInput.trim() : "",
       });
     } catch (error) {
-      toast.error(
-        error?.response?.data?.message ||
+      setErrors((prev) => ({
+        ...prev,
+        otp:
+          error?.response?.data?.message ||
           error?.message ||
           "OTP verification failed",
-      );
+      }));
     }
   };
 
@@ -709,20 +728,27 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
 
                   <input
                     value={username}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setUsername(
                         e.target.value
                           .toLowerCase()
                           .replace(/\s/g, "")
                           .replace(/[^a-z0-9]/g, "")
                           .slice(0, 15),
-                      )
-                    }
+                      );
+                      setErrors((prev) => ({ ...prev, username: "" }));
+                    }}
                     placeholder={text.usernamePh}
                     disabled={registerMutation.isPending}
                     className="register-dynamic-input h-[45px] w-full rounded-[4px] border px-4 text-[13px] outline-none disabled:cursor-not-allowed"
                     style={inputStyle}
                   />
+
+                  {errors.username && (
+                    <p className="mt-1.5 text-[12px] text-red-500">
+                      {errors.username}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-5">
@@ -740,7 +766,9 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value.slice(0, 20))}
+                      onChange={(e) =>
+                        setPassword(e.target.value.slice(0, 20))
+                      }
                       placeholder={text.passwordPh}
                       disabled={registerMutation.isPending}
                       className="register-dynamic-input h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none disabled:cursor-not-allowed"
@@ -761,21 +789,23 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                     </button>
                   </div>
 
-                  <div
-                    className="mt-3 space-y-2 text-[14px] leading-[18px]"
-                    style={{ color: setting.helperText }}
-                  >
-                    {[text.rule1, text.rule2, text.rule3].map((rule) => (
-                      <div key={rule} className="flex items-start gap-2">
+                  <div className="mt-3 space-y-1.5 text-[13px] leading-[18px]">
+                    {[
+                      { met: passwordLengthValid, label: text.rule1 },
+                      { met: passwordHasAlphabet, label: text.rule2 },
+                      { met: passwordHasNumber, label: text.rule3 },
+                    ].map((rule) => (
+                      <div
+                        key={rule.label}
+                        className={`flex items-start gap-2 ${
+                          rule.met ? "text-green-600" : "text-red-500"
+                        }`}
+                      >
                         <CheckCircle
-                          size={17}
+                          size={15}
                           className="mt-[1px] shrink-0"
-                          style={{
-                            fill: setting.helperIcon,
-                            color: setting.helperIcon,
-                          }}
                         />
-                        <span>{rule}</span>
+                        <span>{rule.label}</span>
                       </div>
                     ))}
                   </div>
@@ -824,6 +854,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                             e.target.value.replace(/\D/g, "").slice(0, 15),
                           );
                           resetOtp();
+                          setErrors((prev) => ({ ...prev, phone: "" }));
                         }}
                         placeholder={text.phonePh}
                         disabled={registerMutation.isPending}
@@ -913,6 +944,12 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                       </div>
                     )}
                   </div>
+
+                  {errors.phone && (
+                    <p className="mt-1.5 text-[12px] text-red-500">
+                      {errors.phone}
+                    </p>
+                  )}
                 </div>
 
                 {isBangladeshSelected && (
@@ -928,9 +965,10 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                       <input
                         type="tel"
                         value={otpInput}
-                        onChange={(e) =>
-                          setOtpInput(e.target.value.replace(/\D/g, ""))
-                        }
+                        onChange={(e) => {
+                          setOtpInput(e.target.value.replace(/\D/g, ""));
+                          setErrors((prev) => ({ ...prev, otp: "" }));
+                        }}
                         placeholder={text.otpPh}
                         disabled={registerMutation.isPending}
                         className="register-dynamic-input h-[45px] min-w-0 flex-1 rounded-[4px] border px-4 text-[13px] outline-none disabled:cursor-not-allowed"
@@ -963,6 +1001,12 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                             : text.sendOtp}
                       </button>
                     </div>
+
+                    {errors.otp && (
+                      <p className="mt-1.5 text-[12px] text-red-500">
+                        {errors.otp}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -991,6 +1035,12 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                     style={inputStyle}
                   />
                 </div>
+
+                {generalError && (
+                  <p className="mt-3 text-center text-[12px] text-red-500">
+                    {generalError}
+                  </p>
+                )}
 
                 <button
                   type="button"

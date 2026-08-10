@@ -14,6 +14,15 @@ import { selectLoginModalSetting } from "../../features/global/globalSelectors";
 const fallbackLogoUrl =
   "https://img.c88rx.com/cx/h5/assets/images/member-logo.png?v=1780386038573";
 
+const getErrorField = (message = "") => {
+  const lower = String(message || "").toLowerCase();
+
+  if (lower.includes("username")) return "username";
+  if (lower.includes("password")) return "password";
+
+  return null;
+};
+
 const defaultSetting = {
   logo: "",
   logoUrl: "",
@@ -56,6 +65,9 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  const [errors, setErrors] = useState({ username: "", password: "" });
+  const [generalError, setGeneralError] = useState("");
 
   const text = useMemo(
     () => ({
@@ -101,6 +113,8 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
     setUsername("");
     setPassword("");
     setShowPassword(false);
+    setErrors({ username: "", password: "" });
+    setGeneralError("");
   };
 
   const loginMutation = useMutation({
@@ -123,38 +137,42 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
     },
 
     onError: (error) => {
-      toast.error(
-        error?.response?.data?.message || error?.message || text.failed,
-      );
+      const message =
+        error?.response?.data?.message || error?.message || text.failed;
+      const field = getErrorField(message);
+
+      if (field) {
+        setErrors((prev) => ({ ...prev, [field]: message }));
+      } else {
+        setGeneralError(message);
+      }
     },
   });
 
   const validateForm = () => {
-    if (!cleanUsername) {
-      toast.error(text.enterUsername);
-      return false;
-    }
+    const newErrors = { username: "", password: "" };
 
-    if (cleanUsername.length < 4 || cleanUsername.length > 15) {
-      toast.error(text.usernameLength);
-      return false;
+    if (!cleanUsername) {
+      newErrors.username = text.enterUsername;
+    } else if (cleanUsername.length < 4 || cleanUsername.length > 15) {
+      newErrors.username = text.usernameLength;
     }
 
     if (!cleanPassword) {
-      toast.error(text.enterPassword);
-      return false;
+      newErrors.password = text.enterPassword;
+    } else if (cleanPassword.length < 6 || cleanPassword.length > 20) {
+      newErrors.password = text.passwordLength;
     }
 
-    if (cleanPassword.length < 6 || cleanPassword.length > 20) {
-      toast.error(text.passwordLength);
-      return false;
-    }
+    setErrors(newErrors);
 
-    return true;
+    return !newErrors.username && !newErrors.password;
   };
 
   const handleLogin = () => {
     if (loginMutation.isPending) return;
+
+    setGeneralError("");
     if (!validateForm()) return;
 
     loginMutation.mutate({
@@ -252,15 +270,16 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
                 <input
                   autoFocus
                   value={username}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setUsername(
                       e.target.value
                         .toLowerCase()
                         .replace(/\s/g, "")
                         .replace(/[^a-z0-9]/g, "")
                         .slice(0, 15),
-                    )
-                  }
+                    );
+                    setErrors((prev) => ({ ...prev, username: "" }));
+                  }}
                   placeholder={text.usernamePh}
                   disabled={loginMutation.isPending}
                   className="login-dynamic-input h-[45px] w-full rounded-[4px] border px-4 text-[13px] outline-none disabled:cursor-not-allowed"
@@ -271,6 +290,12 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
                       : setting.inputBorder,
                   }}
                 />
+
+                {errors.username && (
+                  <p className="mt-1.5 text-[12px] text-red-500">
+                    {errors.username}
+                  </p>
+                )}
               </div>
 
               <div className="mt-5">
@@ -288,7 +313,10 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
                   <input
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value.slice(0, 20))}
+                    onChange={(e) => {
+                      setPassword(e.target.value.slice(0, 20));
+                      setErrors((prev) => ({ ...prev, password: "" }));
+                    }}
                     placeholder={text.passwordPh}
                     disabled={loginMutation.isPending}
                     className="login-dynamic-input h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none disabled:cursor-not-allowed"
@@ -308,6 +336,12 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
                     {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
+
+                {errors.password && (
+                  <p className="mt-1.5 text-[12px] text-red-500">
+                    {errors.password}
+                  </p>
+                )}
               </div>
 
               <div className="mt-2 flex justify-end">
@@ -321,6 +355,12 @@ const LoginModal = ({ open, onClose, onRegisterClick, onForgotClick }) => {
                   {text.forgot}
                 </button>
               </div>
+
+              {generalError && (
+                <p className="mt-3 text-center text-[12px] text-red-500">
+                  {generalError}
+                </p>
+              )}
 
               <button
                 type="button"

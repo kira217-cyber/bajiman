@@ -7,6 +7,8 @@ import { successResponse, errorResponse } from "../utils/response.js";
 
 const router = express.Router();
 
+const INITIAL_LIST_LIMIT = 50;
+
 const cleanText = (value = "") => String(value || "").trim();
 
 const cleanBaseUrl = (url = "") => cleanText(url).replace(/\/+$/, "");
@@ -95,6 +97,86 @@ const proxyMasterGet = async (req, res, masterPath) => {
       error?.response?.status || 500,
     );
   }
+};
+
+// Master's /client/game-data returns every active game at once, which makes
+// the client site's first paint slow. Trim it down to the first
+// INITIAL_LIST_LIMIT games per category (plus whatever hot/popular games
+// need) before forwarding to the client. The rest stays reachable behind
+// the existing /client/game-list pagination for background loading.
+const capGameDataPayload = (payload = {}) => {
+  const data = payload?.data || payload;
+  if (!data || typeof data !== "object") return payload;
+
+  const games = Array.isArray(data.games) ? data.games : [];
+  const gamesByCategory = data.gamesByCategory || {};
+
+  const categoryTotals = {};
+  const cappedGamesByCategory = {};
+  const keptGameIds = new Set();
+
+  Object.entries(gamesByCategory).forEach(([categoryId, list]) => {
+    const fullList = Array.isArray(list) ? list : [];
+    categoryTotals[categoryId] = fullList.length;
+
+    const cappedList = fullList.slice(0, INITIAL_LIST_LIMIT);
+    cappedGamesByCategory[categoryId] = cappedList;
+
+    cappedList.forEach((game) => {
+      const key = String(game?.gameId || game?._id || game?.id || "");
+      if (key) keptGameIds.add(key);
+    });
+  });
+
+  const hotGames = Array.isArray(data.hotGames)
+    ? data.hotGames.slice(0, INITIAL_LIST_LIMIT)
+    : data.hotGames;
+
+  const popularGames = Array.isArray(data.popularGames)
+    ? data.popularGames.slice(0, INITIAL_LIST_LIMIT)
+    : data.popularGames;
+
+  [...(hotGames || []), ...(popularGames || [])].forEach((item) => {
+    const key = String(item?.gameId || "");
+    if (key) keptGameIds.add(key);
+  });
+
+  const cappedGames = games.filter((game) => {
+    const key = String(game?.gameId || game?._id || game?.id || "");
+    return keptGameIds.has(key);
+  });
+
+  const gamesByProvider = {};
+  cappedGames.forEach((game) => {
+    const providerId = game?.providerDbId;
+    if (!providerId) return;
+
+    if (!gamesByProvider[providerId]) gamesByProvider[providerId] = [];
+    gamesByProvider[providerId].push(game);
+  });
+
+  return {
+    ...payload,
+    data: {
+      ...data,
+      games: cappedGames,
+      gamesByCategory: cappedGamesByCategory,
+      gamesByProvider,
+      hotGames,
+      popularGames,
+      sports: Array.isArray(data.sports)
+        ? data.sports.slice(0, INITIAL_LIST_LIMIT)
+        : data.sports,
+      homeProviders: Array.isArray(data.homeProviders)
+        ? data.homeProviders.slice(0, INITIAL_LIST_LIMIT)
+        : data.homeProviders,
+      gamesMeta: {
+        limit: INITIAL_LIST_LIMIT,
+        totalGames: games.length,
+        categoryTotals,
+      },
+    },
+  };
 };
 
 /* ADMIN: GET API KEY SETTING */
@@ -269,7 +351,41 @@ router.delete("/", protectAdmin, async (req, res) => {
 
 /* CLIENT PROXY: GLOBAL GAME DATA */
 router.get("/client/game-data", async (req, res) => {
-  return proxyMasterGet(req, res, "/api/master/cx-global/client/game-data");
+  try {
+    const { setting, error, status } = await getValidSetting();
+
+    if (error) return errorResponse(res, error, status);
+
+    const masterApiBaseUrl = getMasterApiBaseUrl();
+
+    if (!masterApiBaseUrl) {
+      return errorResponse(res, "MASTER_API_URL is missing in .env", 500);
+    }
+
+    const response = await axios.get(
+      `${masterApiBaseUrl}/api/master/cx-global/client/game-data`,
+      {
+        params: req.query || {},
+        timeout: 30000,
+        headers: {
+          "x-api-key": setting.apiKey,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    const cappedPayload = capGameDataPayload(response.data);
+
+    return res.status(response.status || 200).json(cappedPayload);
+  } catch (error) {
+    return errorResponse(
+      res,
+      error?.response?.data?.message ||
+        error.message ||
+        "Master API request failed.",
+      error?.response?.status || 500,
+    );
+  }
 });
 
 /* CLIENT PROXY: GAME LIST */

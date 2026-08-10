@@ -3,9 +3,14 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Search } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLanguage } from "../../Context/LanguageProvider";
-import { fetchGlobalGameData } from "../../features/globalGame/globalGameSlice";
 import {
-  selectGlobalGames,
+  fetchGlobalGameData,
+  fetchGameList,
+} from "../../features/globalGame/globalGameSlice";
+import {
+  selectGameList,
+  selectGameListMeta,
+  selectGameListLoading,
   selectProvidersByCategory,
   selectGameCategories,
   selectGlobalGameLoading,
@@ -67,7 +72,10 @@ const Games = () => {
   const categoryId = searchParams.get("categoryId") || "";
   const providerDbId = searchParams.get("providerDbId") || "all";
 
-  const games = useSelector(selectGlobalGames);
+  const games = useSelector(selectGameList);
+  const gameListMeta = useSelector(selectGameListMeta);
+  const gameListLoading = useSelector(selectGameListLoading);
+
   const categories = useSelector(selectGameCategories);
   const providersByCategory = useSelector(selectProvidersByCategory);
   const loading = useSelector(selectGlobalGameLoading);
@@ -83,6 +91,29 @@ const Games = () => {
     }
   }, [dispatch, loaded]);
 
+  // Games are no longer bundled inside game-data (it only ships the first
+  // batch per category to keep initial load fast). Fetch the real,
+  // server-paginated list here instead, in the background.
+  useEffect(() => {
+    dispatch(
+      fetchGameList({
+        categoryId: categoryId || undefined,
+        providerDbId:
+          providerDbId && providerDbId !== "all" ? providerDbId : undefined,
+        page,
+        limit: PER_PAGE,
+      }),
+    );
+  }, [dispatch, categoryId, providerDbId, page]);
+
+  const filterKey = `${categoryId}|${providerDbId}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
   const providers = useMemo(() => {
     const list = providersByCategory?.[categoryId];
     return Array.isArray(list) ? list : [];
@@ -96,20 +127,10 @@ const Games = () => {
     ? category?.categoryName?.bn || category?.categoryTitle?.bn || "গেমস"
     : category?.categoryName?.en || category?.categoryTitle?.en || "Games";
 
+  // categoryId/providerDbId filtering now happens server-side (fetchGameList
+  // above); this only refines the already-fetched page by filter/search.
   const filteredGames = useMemo(() => {
     let list = Array.isArray(games) ? games : [];
-
-    if (categoryId) {
-      list = list.filter(
-        (game) => String(game.categoryId) === String(categoryId),
-      );
-    }
-
-    if (providerDbId && providerDbId !== "all") {
-      list = list.filter(
-        (game) => String(game.providerDbId) === String(providerDbId),
-      );
-    }
 
     if (filter) {
       list = list.filter((game) => Boolean(game?.[filter]));
@@ -137,18 +158,40 @@ const Games = () => {
     }
 
     return list;
-  }, [games, categoryId, providerDbId, filter, search]);
+  }, [games, filter, search]);
 
-  const totalPages = Math.ceil(filteredGames.length / PER_PAGE) || 1;
+  const totalPages = gameListMeta?.totalPages || 1;
+  const totalGames = gameListMeta?.total || 0;
+  const paginatedGames = filteredGames;
 
-  const paginatedGames = useMemo(() => {
-    const start = (page - 1) * PER_PAGE;
-    return filteredGames.slice(start, start + PER_PAGE);
-  }, [filteredGames, page]);
+  const pageNumbers = useMemo(() => {
+    const delta = 1;
+    const range = [];
 
-  useEffect(() => {
-    setPage(1);
-  }, [categoryId, providerDbId, filter, search]);
+    for (let i = 1; i <= totalPages; i += 1) {
+      if (i === 1 || i === totalPages || (i >= page - delta && i <= page + delta)) {
+        range.push(i);
+      }
+    }
+
+    const withDots = [];
+    let prev = 0;
+
+    range.forEach((i) => {
+      if (prev) {
+        if (i - prev === 2) {
+          withDots.push(prev + 1);
+        } else if (i - prev > 1) {
+          withDots.push(`dots-${i}`);
+        }
+      }
+
+      withDots.push(i);
+      prev = i;
+    });
+
+    return withDots;
+  }, [page, totalPages]);
 
   const handleProviderChange = (providerId) => {
     setSearchParams({
@@ -162,7 +205,8 @@ const Games = () => {
     navigate(`/play-game/${game.gameId}?uid=${game.gameUId || ""}`);
   };
 
-  const showSkeleton = loading || !loaded;
+  const showProvidersSkeleton = loading || !loaded;
+  const showGamesSkeleton = gameListLoading;
 
   return (
     <section
@@ -192,7 +236,7 @@ const Games = () => {
               ALL
             </button>
 
-            {showSkeleton
+            {showProvidersSkeleton
               ? Array.from({ length: 8 }).map((_, index) => (
                   <div
                     key={index}
@@ -296,7 +340,7 @@ const Games = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-[8px] md:grid-cols-6 md:gap-[16px]">
-          {showSkeleton
+          {showGamesSkeleton
             ? Array.from({ length: 24 }).map((_, index) => (
                 <div
                   key={index}
@@ -375,7 +419,7 @@ const Games = () => {
               })}
         </div>
 
-        {!showSkeleton && paginatedGames.length === 0 && (
+        {!showGamesSkeleton && paginatedGames.length === 0 && (
           <div
             className="py-10 text-center text-[14px]"
             style={{ color: colors.emptyText }}
@@ -384,46 +428,93 @@ const Games = () => {
           </div>
         )}
 
-        {!showSkeleton && totalPages > 1 && (
-          <div className="mt-5 flex items-center justify-center gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-              className="h-[32px] cursor-pointer rounded-[3px] px-3 text-[13px] disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: colors.paginationBg,
-                color: colors.paginationText,
-                opacity:
-                  page <= 1 ? colors.paginationDisabledOpacity || "0.50" : "1",
-              }}
-            >
-              Prev
-            </button>
+        {!showGamesSkeleton && totalPages > 1 && (
+          <div className="mt-5">
+            <div className="flex flex-wrap items-center justify-center gap-[6px]">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: colors.paginationBg,
+                  color: colors.paginationText,
+                  border: `1px solid ${colors.skeletonBg}`,
+                  opacity:
+                    page <= 1
+                      ? colors.paginationDisabledOpacity || "0.50"
+                      : "1",
+                }}
+              >
+                Prev
+              </button>
 
-            <span
-              className="text-[13px]"
-              style={{ color: colors.paginationText }}
-            >
-              {page} / {totalPages}
-            </span>
+              {pageNumbers.map((item) =>
+                typeof item === "number" ? (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setPage(item)}
+                    className="h-[32px] min-w-[32px] cursor-pointer rounded-[4px] px-2 text-[13px] transition"
+                    style={{
+                      backgroundColor:
+                        item === page ? colors.buttonBg : colors.paginationBg,
+                      color:
+                        item === page
+                          ? colors.buttonText
+                          : colors.paginationText,
+                      border:
+                        item === page
+                          ? "none"
+                          : `1px solid ${colors.skeletonBg}`,
+                      fontWeight: item === page ? 700 : 500,
+                    }}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span
+                    key={item}
+                    className="px-1 text-[13px] select-none"
+                    style={{
+                      color: colors.paginationText,
+                      opacity: colors.paginationDisabledOpacity || "0.50",
+                    }}
+                  >
+                    …
+                  </span>
+                ),
+              )}
 
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
-              className="h-[32px] cursor-pointer rounded-[3px] px-3 text-[13px] disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: colors.paginationBg,
-                color: colors.paginationText,
-                opacity:
-                  page >= totalPages
-                    ? colors.paginationDisabledOpacity || "0.50"
-                    : "1",
-              }}
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() =>
+                  setPage((prev) => Math.min(prev + 1, totalPages))
+                }
+                className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: colors.paginationBg,
+                  color: colors.paginationText,
+                  border: `1px solid ${colors.skeletonBg}`,
+                  opacity:
+                    page >= totalPages
+                      ? colors.paginationDisabledOpacity || "0.50"
+                      : "1",
+                }}
+              >
+                Next
+              </button>
+            </div>
+
+            <div
+              className="mt-2 text-center text-[12px]"
+              style={{ color: colors.emptyText }}
             >
-              Next
-            </button>
+              {isBangla
+                ? `পেজ ${page}/${totalPages} • মোট ${totalGames}`
+                : `Page ${page}/${totalPages} • Total ${totalGames}`}
+            </div>
           </div>
         )}
       </div>

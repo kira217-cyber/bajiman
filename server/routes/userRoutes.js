@@ -155,6 +155,22 @@ router.post("/register", async (req, res) => {
       return errorResponse(res, "Password must be 6-20 characters", 400);
     }
 
+    if (!/[a-zA-Z]/.test(finalPassword)) {
+      return errorResponse(
+        res,
+        "Password must contain at least one alphabet",
+        400,
+      );
+    }
+
+    if (!/\d/.test(finalPassword)) {
+      return errorResponse(
+        res,
+        "Password must contain at least one number",
+        400,
+      );
+    }
+
     const userExists = await User.exists({ userId: finalUserId });
 
     if (userExists) {

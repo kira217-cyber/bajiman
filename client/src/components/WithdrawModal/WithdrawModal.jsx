@@ -83,8 +83,8 @@ const normalizePhone = (value) => String(value || "").replace(/[^\d]/g, "");
 
 const walletTypes = [
   { key: "personal", bn: "পার্সোনাল", en: "Personal" },
-  { key: "agent", bn: "এজেন্ট", en: "Agent" },
-  { key: "merchant", bn: "মার্চেন্ট", en: "Merchant" },
+  // { key: "agent", bn: "এজেন্ট", en: "Agent" },
+  // { key: "merchant", bn: "মার্চেন্ট", en: "Merchant" },
 ];
 
 const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
