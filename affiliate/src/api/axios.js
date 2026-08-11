@@ -20,12 +20,24 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+// এই এন্ডপয়েন্টগুলোতে 401 এলে auto-logout করা হবে না (ভুল পাসওয়ার্ড/OTP এর কারণেও 401 আসতে পারে)
+// path segment হিসেবে ম্যাচ করে, যাতে "/affiliate-login-settings" এর মতো নাম ভুলবশত ধরা না পড়ে
+const AUTH_ENDPOINT_RE = /\/(login|register|forgot-password)(?:\/|$|\?)/i;
+const isAuthEndpoint = (url = "") => AUTH_ENDPOINT_RE.test(url);
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    const status = error?.response?.status;
+    const url = error?.config?.url || "";
+
+    if (status === 401 && !isAuthEndpoint(url)) {
       localStorage.removeItem("affiliate_user");
       localStorage.removeItem("affiliate_token");
+
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
     }
 
     return Promise.reject(error);
