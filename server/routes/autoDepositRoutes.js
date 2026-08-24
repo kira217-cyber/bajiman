@@ -572,8 +572,13 @@ router.get("/deposits/admin", protectAdmin, async (req, res) => {
 
     const q = safeString(req.query.q);
     const status = safeString(req.query.status).toUpperCase();
+    const userId = safeString(req.query.userId);
 
     const matchStage = {};
+
+    if (userId) {
+      matchStage.userIdentity = userId;
+    }
 
     if (["PENDING", "PAID", "FAILED"].includes(status)) {
       matchStage.status = status;
@@ -946,111 +951,6 @@ router.post("/webhook", async (req, res) => {
     });
   } catch (error) {
     console.error("auto-deposit webhook error:", error?.message || error);
-  }
-});
-
-/* =========================================
-   ADMIN SINGLE USER AUTO DEPOSIT HISTORY
-========================================= */
-router.get("/deposits/admin", protectAdmin, async (req, res) => {
-  try {
-    const { userId, page = 1, limit = 15, status = "ALL", q = "" } = req.query;
-
-    const filter = {};
-
-    if (userId) {
-      filter.user = userId;
-    }
-
-    if (["PENDING", "PAID", "FAILED"].includes(String(status).toUpperCase())) {
-      filter.status = String(status).toUpperCase();
-    }
-
-    if (q?.trim()) {
-      const regex = new RegExp(q.trim(), "i");
-
-      filter.$or = [
-        { invoiceNumber: regex },
-        { transactionId: regex },
-        { sessionCode: regex },
-        { bank: regex },
-        { "selectedBonus.title.en": regex },
-        { "selectedBonus.title.bn": regex },
-      ];
-    }
-
-    const pageNum = Math.max(Number(page) || 1, 1);
-    const limitNum = Math.min(Math.max(Number(limit) || 15, 1), 100);
-
-    const skip = (pageNum - 1) * limitNum;
-
-    const [rows, total] = await Promise.all([
-      AutoDeposit.find(filter)
-        .populate("user", "userId firstName lastName phone")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-
-      AutoDeposit.countDocuments(filter),
-    ]);
-
-    const summaryRows = await AutoDeposit.find({
-      ...(userId ? { user: userId } : {}),
-    })
-      .select("status amount calc")
-      .lean();
-
-    const summary = {
-      paidAmount: 0,
-      pendingAmount: 0,
-      failedAmount: 0,
-
-      paidCount: 0,
-      pendingCount: 0,
-      failedCount: 0,
-    };
-
-    for (const item of summaryRows) {
-      const statusValue = String(item.status || "PENDING").toUpperCase();
-
-      const amount = Number(item?.calc?.creditedAmount || item?.amount || 0);
-
-      if (statusValue === "PAID") {
-        summary.paidAmount += amount;
-        summary.paidCount += 1;
-      } else if (statusValue === "FAILED") {
-        summary.failedAmount += amount;
-        summary.failedCount += 1;
-      } else {
-        summary.pendingAmount += amount;
-        summary.pendingCount += 1;
-      }
-    }
-
-    return successResponse(
-      res,
-      "Auto deposit history fetched successfully",
-      rows,
-      200,
-      {
-        summary,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          totalPages: Math.ceil(total / limitNum),
-        },
-      },
-    );
-  } catch (error) {
-    console.error("ADMIN SINGLE USER AUTO DEPOSIT HISTORY ERROR:", error);
-
-    return errorResponse(
-      res,
-      error.message || "Failed to load auto deposit history",
-      500,
-    );
   }
 });
 
