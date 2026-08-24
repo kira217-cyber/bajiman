@@ -237,7 +237,7 @@ const Navber = ({ setOpen, desktopOpen }) => {
     }
 
     closeAllModals();
-    setOpenAutoDeposit(true);
+    setOpenDepositFunds(true);
   };
 
   const openTransaction = () => {
