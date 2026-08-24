@@ -5,21 +5,39 @@ import { useDispatch, useSelector } from "react-redux";
 import { useLanguage } from "../../Context/LanguageProvider";
 import {
   fetchGlobalGameData,
-  fetchGameList,
+  fetchScopedCatalog,
+  fetchSearchCatalog,
 } from "../../features/globalGame/globalGameSlice";
 import {
-  selectGameList,
-  selectGameListMeta,
-  selectGameListLoading,
   selectProvidersByCategory,
   selectGameCategories,
   selectGlobalGameLoading,
   selectGlobalGameLoaded,
+  selectScopedCatalog,
+  selectScopedCatalogKey,
+  selectScopedCatalogLoading,
+  selectSearchCatalog,
+  selectSearchCatalogLoading,
+  selectSearchCatalogLoaded,
 } from "../../features/globalGame/globalGameSelectors";
 import { selectHomePageContentColorSetting } from "../../features/global/globalSelectors";
 import JackpotBanner from "../../components/JackpotBanner/JackpotBanner";
 
 const PER_PAGE = 24;
+
+// Games missing a real name or an image render as broken/placeholder
+// cards, so they're dropped from every view (browse, filter, search) —
+// and pagination is computed after this filter so no empty "phantom"
+// pages are left behind for the games that got dropped.
+const hasNameAndImage = (game) => {
+  const name = String(
+    game?.oracleGame?.name || game?.name || game?.gameName || "",
+  ).trim();
+
+  const image = String(game?.imageUrl || "").trim();
+
+  return Boolean(name) && Boolean(image);
+};
 
 const defaultContentColors = {
   pageBg: "#f1f1f1",
@@ -71,19 +89,27 @@ const Games = () => {
 
   const categoryId = searchParams.get("categoryId") || "";
   const providerDbId = searchParams.get("providerDbId") || "all";
-
-  const games = useSelector(selectGameList);
-  const gameListMeta = useSelector(selectGameListMeta);
-  const gameListLoading = useSelector(selectGameListLoading);
+  const effectiveProviderId = providerDbId !== "all" ? providerDbId : "";
 
   const categories = useSelector(selectGameCategories);
   const providersByCategory = useSelector(selectProvidersByCategory);
   const loading = useSelector(selectGlobalGameLoading);
   const loaded = useSelector(selectGlobalGameLoaded);
 
+  const scopedCatalog = useSelector(selectScopedCatalog);
+  const scopedCatalogKey = useSelector(selectScopedCatalogKey);
+  const scopedCatalogLoading = useSelector(selectScopedCatalogLoading);
+
+  const searchCatalog = useSelector(selectSearchCatalog);
+  const searchCatalogLoading = useSelector(selectSearchCatalogLoading);
+  const searchCatalogLoaded = useSelector(selectSearchCatalogLoaded);
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
+
+  const isSearching = Boolean(search.trim());
+  const scopeKey = `${categoryId}|${effectiveProviderId}`;
 
   useEffect(() => {
     if (!loaded) {
@@ -91,26 +117,45 @@ const Games = () => {
     }
   }, [dispatch, loaded]);
 
-  // Games are no longer bundled inside game-data (it only ships the first
-  // batch per category to keep initial load fast). Fetch the real,
-  // server-paginated list here instead, in the background.
+  // Browse view needs the full category/provider list (not just one
+  // server-paginated page) so games without a name/image can be filtered
+  // out client-side and pagination still lines up with what's actually
+  // shown — no leftover "phantom" pages for the games that got dropped.
   useEffect(() => {
     dispatch(
-      fetchGameList({
+      fetchScopedCatalog({
         categoryId: categoryId || undefined,
-        providerDbId:
-          providerDbId && providerDbId !== "all" ? providerDbId : undefined,
-        page,
-        limit: PER_PAGE,
+        providerDbId: effectiveProviderId || undefined,
       }),
     );
-  }, [dispatch, categoryId, providerDbId, page]);
+  }, [dispatch, categoryId, effectiveProviderId]);
 
-  const filterKey = `${categoryId}|${providerDbId}`;
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  // Full site-wide catalog is only fetched the first time the user
+  // actually searches (once categories have loaded, since the fetch runs
+  // one request per category), then reused for every keystroke so search
+  // matches every game site-wide instead of just the current category.
+  useEffect(() => {
+    if (
+      isSearching &&
+      loaded &&
+      !searchCatalogLoaded &&
+      !searchCatalogLoading
+    ) {
+      dispatch(fetchSearchCatalog());
+    }
+  }, [
+    isSearching,
+    loaded,
+    searchCatalogLoaded,
+    searchCatalogLoading,
+    dispatch,
+  ]);
 
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
+  const resetKey = `${scopeKey}|${isSearching ? search.trim().toLowerCase() : ""}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
     setPage(1);
   }
 
@@ -127,16 +172,21 @@ const Games = () => {
     ? category?.categoryName?.bn || category?.categoryTitle?.bn || "গেমস"
     : category?.categoryName?.en || category?.categoryTitle?.en || "Games";
 
-  // categoryId/providerDbId filtering now happens server-side (fetchGameList
-  // above); this only refines the already-fetched page by filter/search.
+  // Browse uses the full scoped (category/provider) catalog; search uses
+  // the full site-wide catalog. Either way we filter client-side and
+  // paginate the filtered result ourselves, so pages always match what's
+  // actually visible.
   const filteredGames = useMemo(() => {
-    let list = Array.isArray(games) ? games : [];
+    let list = isSearching ? searchCatalog : scopedCatalog;
+    list = Array.isArray(list) ? list : [];
+
+    list = list.filter(hasNameAndImage);
 
     if (filter) {
       list = list.filter((game) => Boolean(game?.[filter]));
     }
 
-    if (search.trim()) {
+    if (isSearching) {
       const q = search.trim().toLowerCase();
 
       list = list.filter((game) => {
@@ -158,11 +208,15 @@ const Games = () => {
     }
 
     return list;
-  }, [games, filter, search]);
+  }, [scopedCatalog, searchCatalog, isSearching, filter, search]);
 
-  const totalPages = gameListMeta?.totalPages || 1;
-  const totalGames = gameListMeta?.total || 0;
-  const paginatedGames = filteredGames;
+  const totalGames = filteredGames.length;
+  const totalPages = Math.max(Math.ceil(totalGames / PER_PAGE), 1);
+
+  const paginatedGames = useMemo(
+    () => filteredGames.slice((page - 1) * PER_PAGE, page * PER_PAGE),
+    [filteredGames, page],
+  );
 
   const pageNumbers = useMemo(() => {
     const delta = 1;
@@ -206,7 +260,9 @@ const Games = () => {
   };
 
   const showProvidersSkeleton = loading || !loaded;
-  const showGamesSkeleton = gameListLoading;
+  const showGamesSkeleton = isSearching
+    ? !searchCatalogLoaded
+    : scopedCatalogLoading || scopedCatalogKey !== scopeKey;
 
   return (
     <section
@@ -337,6 +393,17 @@ const Games = () => {
               e.currentTarget.style.borderColor = colors.inputBorder;
             }}
           />
+
+          {isSearching && searchCatalogLoading && !searchCatalogLoaded && (
+            <p
+              className="mt-1 text-[11px]"
+              style={{ color: colors.emptyText }}
+            >
+              {isBangla
+                ? "সব গেম লোড হচ্ছে... (শুধু প্রথমবার)"
+                : "Loading all games... (first time only)"}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-[8px] md:grid-cols-6 md:gap-[16px]">
@@ -391,21 +458,12 @@ const Games = () => {
                       className="h-[100px] w-full overflow-hidden md:h-[120px]"
                       style={{ backgroundColor: colors.imageBoxBg }}
                     >
-                      {game?.imageUrl ? (
-                        <img
-                          src={game.imageUrl}
-                          alt={gameName}
-                          className="h-full w-full"
-                          draggable="false"
-                        />
-                      ) : (
-                        <div
-                          className="flex h-full w-full items-center justify-center text-[12px]"
-                          style={{ color: colors.imagePlaceholderText }}
-                        >
-                          No Image
-                        </div>
-                      )}
+                      <img
+                        src={game.imageUrl}
+                        alt={gameName}
+                        className="h-full w-full"
+                        draggable="false"
+                      />
                     </div>
 
                     <p
@@ -424,88 +482,92 @@ const Games = () => {
             className="py-10 text-center text-[14px]"
             style={{ color: colors.emptyText }}
           >
-            {isBangla ? "কোনো গেম পাওয়া যায়নি" : "No games found"}
+            {isBangla ? "কোনো গেম পাওয়া যায়নি" : "No games found"}
           </div>
         )}
 
-        {!showGamesSkeleton && totalPages > 1 && (
+        {!showGamesSkeleton && totalGames > 0 && (
           <div className="mt-5">
-            <div className="flex flex-wrap items-center justify-center gap-[6px]">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-                className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
-                style={{
-                  backgroundColor: colors.paginationBg,
-                  color: colors.paginationText,
-                  border: `1px solid ${colors.skeletonBg}`,
-                  opacity:
-                    page <= 1
-                      ? colors.paginationDisabledOpacity || "0.50"
-                      : "1",
-                }}
-              >
-                Prev
-              </button>
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-[6px]">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                  className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: colors.paginationBg,
+                    color: colors.paginationText,
+                    border: `1px solid ${colors.skeletonBg}`,
+                    opacity:
+                      page <= 1
+                        ? colors.paginationDisabledOpacity || "0.50"
+                        : "1",
+                  }}
+                >
+                  Prev
+                </button>
 
-              {pageNumbers.map((item) =>
-                typeof item === "number" ? (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setPage(item)}
-                    className="h-[32px] min-w-[32px] cursor-pointer rounded-[4px] px-2 text-[13px] transition"
-                    style={{
-                      backgroundColor:
-                        item === page ? colors.buttonBg : colors.paginationBg,
-                      color:
-                        item === page
-                          ? colors.buttonText
-                          : colors.paginationText,
-                      border:
-                        item === page
-                          ? "none"
-                          : `1px solid ${colors.skeletonBg}`,
-                      fontWeight: item === page ? 700 : 500,
-                    }}
-                  >
-                    {item}
-                  </button>
-                ) : (
-                  <span
-                    key={item}
-                    className="px-1 text-[13px] select-none"
-                    style={{
-                      color: colors.paginationText,
-                      opacity: colors.paginationDisabledOpacity || "0.50",
-                    }}
-                  >
-                    …
-                  </span>
-                ),
-              )}
+                {pageNumbers.map((item) =>
+                  typeof item === "number" ? (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setPage(item)}
+                      className="h-[32px] min-w-[32px] cursor-pointer rounded-[4px] px-2 text-[13px] transition"
+                      style={{
+                        backgroundColor:
+                          item === page
+                            ? colors.buttonBg
+                            : colors.paginationBg,
+                        color:
+                          item === page
+                            ? colors.buttonText
+                            : colors.paginationText,
+                        border:
+                          item === page
+                            ? "none"
+                            : `1px solid ${colors.skeletonBg}`,
+                        fontWeight: item === page ? 700 : 500,
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span
+                      key={item}
+                      className="px-1 text-[13px] select-none"
+                      style={{
+                        color: colors.paginationText,
+                        opacity: colors.paginationDisabledOpacity || "0.50",
+                      }}
+                    >
+                      …
+                    </span>
+                  ),
+                )}
 
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() =>
-                  setPage((prev) => Math.min(prev + 1, totalPages))
-                }
-                className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
-                style={{
-                  backgroundColor: colors.paginationBg,
-                  color: colors.paginationText,
-                  border: `1px solid ${colors.skeletonBg}`,
-                  opacity:
-                    page >= totalPages
-                      ? colors.paginationDisabledOpacity || "0.50"
-                      : "1",
-                }}
-              >
-                Next
-              </button>
-            </div>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() =>
+                    setPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  className="h-[32px] cursor-pointer rounded-[4px] px-3 text-[13px] font-medium disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: colors.paginationBg,
+                    color: colors.paginationText,
+                    border: `1px solid ${colors.skeletonBg}`,
+                    opacity:
+                      page >= totalPages
+                        ? colors.paginationDisabledOpacity || "0.50"
+                        : "1",
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
 
             <div
               className="mt-2 text-center text-[12px]"

@@ -19,11 +19,19 @@ export const selectGlobalGameLoading = (state) => state.globalGame.loading;
 export const selectGlobalGameLoaded = (state) => state.globalGame.loaded;
 export const selectGlobalGameError = (state) => state.globalGame.error;
 
-export const selectGameList = (state) => state.globalGame.gameList;
-export const selectGameListMeta = (state) => state.globalGame.gameListMeta;
-export const selectGameListLoading = (state) =>
-  state.globalGame.gameListLoading;
-export const selectGameListError = (state) => state.globalGame.gameListError;
+export const selectScopedCatalog = (state) => state.globalGame.scopedCatalog;
+export const selectScopedCatalogKey = (state) =>
+  state.globalGame.scopedCatalogKey;
+export const selectScopedCatalogLoading = (state) =>
+  state.globalGame.scopedCatalogLoading;
+export const selectScopedCatalogError = (state) =>
+  state.globalGame.scopedCatalogError;
+
+export const selectSearchCatalog = (state) => state.globalGame.searchCatalog;
+export const selectSearchCatalogLoading = (state) =>
+  state.globalGame.searchCatalogLoading;
+export const selectSearchCatalogLoaded = (state) =>
+  state.globalGame.searchCatalogLoaded;
 
 export const selectPlayGame = (state) => state.globalGame.playGame;
 export const selectPlayGameLoading = (state) =>

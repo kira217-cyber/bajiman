@@ -17,15 +17,115 @@ export const fetchGlobalGameData = createAsyncThunk(
   },
 );
 
-export const fetchGameList = createAsyncThunk(
-  "globalGame/fetchGameList",
-  async (params = {}, { rejectWithValue }) => {
+// Shared by both catalog thunks below: pages through every result for a
+// given set of game-list query params (categoryId/providerDbId), using the
+// exact page size (24) normal browsing already fetches successfully —
+// larger limits or a categoryId-less "everything" call aren't known to be
+// supported by the upstream master API. Runs pages in bounded-concurrency
+// batches so it stays reasonably fast even for a category with thousands
+// of games, and one bad page can't sink the whole fetch.
+const PAGE_LIMIT = 24;
+const FETCH_CONCURRENCY = 12;
+
+const runInBatches = async (items, worker, batchSize) => {
+  const results = [];
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(worker));
+    results.push(...batchResults);
+  }
+
+  return results;
+};
+
+const fetchAllGamesFor = async (extraParams, pageCap) => {
+  const fetchPage = (page) =>
+    api
+      .get(`${GAME_PROXY_API}/game-list`, {
+        params: { ...extraParams, page, limit: PAGE_LIMIT },
+      })
+      .then((res) => res?.data?.data || {})
+      .catch(() => ({ games: [], meta: { totalPages: 1 } }));
+
+  const first = await fetchPage(1);
+  let games = Array.isArray(first.games) ? first.games : [];
+
+  const totalPages = Math.min(
+    Number(first?.meta?.totalPages || 1) || 1,
+    pageCap,
+  );
+
+  if (totalPages > 1) {
+    const pages = [];
+    for (let page = 2; page <= totalPages; page += 1) pages.push(page);
+
+    const rest = await runInBatches(pages, fetchPage, FETCH_CONCURRENCY);
+
+    rest.forEach((data) => {
+      if (Array.isArray(data.games)) games = games.concat(data.games);
+    });
+  }
+
+  return games;
+};
+
+// Games.jsx browse view needs every game in the selected category/provider
+// (not just one server-paginated page) so that games without a name/image
+// can be filtered out client-side without leaving behind empty "phantom"
+// pages. This fetches the full scoped list; Games.jsx paginates it itself.
+const SCOPED_MAX_PAGES = 400; // safety cap: ~9600 games per category/provider
+
+export const fetchScopedCatalog = createAsyncThunk(
+  "globalGame/fetchScopedCatalog",
+  async ({ categoryId, providerDbId } = {}, { rejectWithValue }) => {
     try {
-      const res = await api.get(`${GAME_PROXY_API}/game-list`, { params });
-      return res?.data?.data || {};
+      return await fetchAllGamesFor(
+        { categoryId, providerDbId },
+        SCOPED_MAX_PAGES,
+      );
     } catch (error) {
       return rejectWithValue(
         error?.response?.data?.message || "Failed to load games",
+      );
+    }
+  },
+);
+
+// Search needs to match every game in every category, site-wide (the site
+// has ~15k games total), so it fetches each category's full list, one
+// category at a time (each still paginated internally with up to
+// FETCH_CONCURRENCY requests in flight), bounded by an overall games
+// ceiling. Categories are processed sequentially rather than concurrently
+// with each other so the number of simultaneous requests stays bounded to
+// FETCH_CONCURRENCY instead of multiplying per category.
+const SEARCH_TOTAL_GAMES_CAP = 20000; // overall safety ceiling, above the ~15k catalog
+
+export const fetchSearchCatalog = createAsyncThunk(
+  "globalGame/fetchSearchCatalog",
+  async (_, { getState, rejectWithValue }) => {
+    const state = getState();
+    const categories = Array.isArray(state?.globalGame?.categories)
+      ? state.globalGame.categories
+      : [];
+    const categoryIds = categories.map((item) => item?._id).filter(Boolean);
+
+    try {
+      let allGames = [];
+      let budget = Math.floor(SEARCH_TOTAL_GAMES_CAP / PAGE_LIMIT);
+
+      for (const categoryId of categoryIds) {
+        if (budget <= 0) break;
+
+        const games = await fetchAllGamesFor({ categoryId }, budget);
+        allGames = allGames.concat(games);
+        budget -= Math.ceil(games.length / PAGE_LIMIT);
+      }
+
+      return allGames;
+    } catch (error) {
+      return rejectWithValue(
+        error?.response?.data?.message || "Failed to load games for search",
       );
     }
   },
@@ -58,22 +158,21 @@ const initialState = {
   gamesByProvider: {},
   providersByCategory: {},
 
-  gameList: [],
-  gameListMeta: {
-    page: 1,
-    limit: 24,
-    total: 0,
-    totalPages: 1,
-  },
+  scopedCatalog: [],
+  scopedCatalogKey: null,
+  scopedCatalogLoading: false,
+  scopedCatalogError: null,
+
+  searchCatalog: [],
+  searchCatalogLoading: false,
+  searchCatalogLoaded: false,
+  searchCatalogError: null,
 
   playGame: null,
 
   loading: false,
   loaded: false,
   error: null,
-
-  gameListLoading: false,
-  gameListError: null,
 
   playGameLoading: false,
   playGameError: null,
@@ -85,7 +184,6 @@ const globalGameSlice = createSlice({
   reducers: {
     clearGlobalGameError: (state) => {
       state.error = null;
-      state.gameListError = null;
       state.playGameError = null;
     },
 
@@ -132,25 +230,40 @@ const globalGameSlice = createSlice({
         state.error = action.payload || "Failed to load game data";
       })
 
-      .addCase(fetchGameList.pending, (state) => {
-        state.gameListLoading = true;
-        state.gameListError = null;
+      .addCase(fetchScopedCatalog.pending, (state) => {
+        state.scopedCatalogLoading = true;
+        state.scopedCatalogError = null;
       })
-      .addCase(fetchGameList.fulfilled, (state, action) => {
-        const data = action.payload || {};
+      .addCase(fetchScopedCatalog.fulfilled, (state, action) => {
+        const { categoryId, providerDbId } = action.meta.arg || {};
 
-        state.gameListLoading = false;
-        state.gameList = Array.isArray(data.games) ? data.games : [];
-        state.gameListMeta = data.meta || {
-          page: 1,
-          limit: 24,
-          total: 0,
-          totalPages: 1,
-        };
+        state.scopedCatalogLoading = false;
+        state.scopedCatalog = Array.isArray(action.payload)
+          ? action.payload
+          : [];
+        state.scopedCatalogKey = `${categoryId || ""}|${providerDbId || ""}`;
       })
-      .addCase(fetchGameList.rejected, (state, action) => {
-        state.gameListLoading = false;
-        state.gameListError = action.payload || "Failed to load games";
+      .addCase(fetchScopedCatalog.rejected, (state, action) => {
+        state.scopedCatalogLoading = false;
+        state.scopedCatalogError = action.payload || "Failed to load games";
+      })
+
+      .addCase(fetchSearchCatalog.pending, (state) => {
+        state.searchCatalogLoading = true;
+        state.searchCatalogError = null;
+      })
+      .addCase(fetchSearchCatalog.fulfilled, (state, action) => {
+        state.searchCatalogLoading = false;
+        state.searchCatalogLoaded = true;
+        state.searchCatalog = Array.isArray(action.payload)
+          ? action.payload
+          : [];
+      })
+      .addCase(fetchSearchCatalog.rejected, (state, action) => {
+        state.searchCatalogLoading = false;
+        state.searchCatalogLoaded = true;
+        state.searchCatalogError =
+          action.payload || "Failed to load games for search";
       })
 
       .addCase(fetchPlayGameDetails.pending, (state) => {
