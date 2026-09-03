@@ -16,6 +16,7 @@ import depositMethodRoutes from "./routes/depositMethodRoutes.js";
 import depositFieldRoutes from "./routes/depositFieldRoutes.js";
 import depositBonusTurnoverRoutes from "./routes/depositBonusTurnoverRoutes.js";
 import turnoverRoutes from "./routes/turnoverRoutes.js";
+import turnoverProviderSettingRoutes from "./routes/turnoverProviderSettingRoutes.js";
 import depositRequestRoutes from "./routes/depositRequestRoutes.js";
 import adminManualDepositRoutes from "./routes/adminManualDepositRoutes.js";
 import userInfoRoutes from "./routes/userInfoRoutes.js";
@@ -48,6 +49,7 @@ import categorySectionSettingRoutes from "./routes/categorySectionSettingRoutes.
 import registerModalSettingRoutes from "./routes/registerModalSettingRoutes.js";
 import loginModalSettingRoutes from "./routes/loginModalSettingRoutes.js";
 import forgotPasswordRoutes from "./routes/forgotPasswordRoutes.js";
+import otpSettingRoutes from "./routes/otpSettingRoutes.js";
 import referRedeemAdminRoutes from "./routes/referRedeemAdminRoutes.js";
 import referRedeemUserRoutes from "./routes/referRedeemUserRoutes.js";
 import modalColorSettingRoutes from "./routes/modalColorSettingRoutes.js";
@@ -121,6 +123,7 @@ app.use("/api/deposit-methods", depositMethodRoutes);
 app.use("/api/deposit-fields", depositFieldRoutes);
 app.use("/api/deposit-bonus-turnover", depositBonusTurnoverRoutes);
 app.use("/api/turnovers", turnoverRoutes);
+app.use("/api/turnover-provider-setting", turnoverProviderSettingRoutes);
 app.use("/api/deposit-requests", depositRequestRoutes);
 app.use("/api/admin/manual-deposits", adminManualDepositRoutes);
 app.use("/api/user-info", userInfoRoutes);
@@ -131,6 +134,7 @@ app.use("/api", withdrawRequestRoutes);
 
 // Forget Password
 app.use("/api/users/forgot-password", forgotPasswordRoutes);
+app.use("/api/otp-setting", otpSettingRoutes);
 
 // Refer and Reedeem
 app.use("/api/admin/refer-redeem", referRedeemAdminRoutes);

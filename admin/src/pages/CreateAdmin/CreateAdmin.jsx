@@ -63,6 +63,16 @@ const CreateAdmin = () => {
         path: "/add-deposit-bonus-turnover",
       },
       {
+        key: "turnover-provider-setting",
+        label: "Turnover Providers",
+        path: "/turnover-provider-setting",
+      },
+      {
+        key: "otp-setting",
+        label: "OTP Setting",
+        path: "/otp-setting",
+      },
+      {
         key: "manual-deposit",
         label: "Manual Deposit",
         path: "/manual-deposit",
