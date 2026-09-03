@@ -33,8 +33,13 @@ createRoot(document.getElementById("root")).render(
           <BootstrapAuth>
             <RouterProvider router={routes} />
 
+            {/* z-index above every modal (highest in use is z-[100020] on
+                SuccessConfirmModal) — otherwise toasts render behind a
+                modal's dark backdrop and never appear. top-center also
+                keeps toasts visually tied to the centered modals instead
+                of a top-right corner unrelated to what's open. */}
             <ToastContainer
-              position="top-right"
+              position="top-center"
               autoClose={2200}
               hideProgressBar={false}
               newestOnTop
@@ -42,6 +47,7 @@ createRoot(document.getElementById("root")).render(
               pauseOnHover
               draggable
               theme="light"
+              style={{ zIndex: 999999 }}
             />
           </BootstrapAuth>
         </LanguageProvider>
