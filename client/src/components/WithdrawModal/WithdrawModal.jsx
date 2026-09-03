@@ -3,13 +3,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X,
   Wallet,
-  ShieldCheck,
   AlertCircle,
   Loader2,
   Plus,
   Phone,
   CheckCircle2,
-  Info,
   ChevronUp,
 } from "lucide-react";
 import { toast } from "react-toastify";
@@ -18,6 +16,9 @@ import api from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import { selectIsAuth, selectUser } from "../../features/auth/authSelectors";
 import { selectModalColorSetting } from "../../features/global/globalSelectors";
+import AddEWalletFlow from "./AddEWalletFlow";
+import OtpVerifyBox from "../OtpVerifyBox/OtpVerifyBox";
+import useOtpSetting from "../../hook/useOtpSetting";
 
 const defaultModalColors = {
   modalBg: "#ffffff",
@@ -79,13 +80,8 @@ const getImageUrl = (url) => {
   return `${import.meta.env.VITE_API_URL}${url}`;
 };
 
-const normalizePhone = (value) => String(value || "").replace(/[^\d]/g, "");
-
-const walletTypes = [
-  { key: "personal", bn: "পার্সোনাল", en: "Personal" },
-  // { key: "agent", bn: "এজেন্ট", en: "Agent" },
-  // { key: "merchant", bn: "মার্চেন্ট", en: "Merchant" },
-];
+const MANUAL_WALLET_CAP = 4;
+const PRESET_AMOUNTS = [300, 1000, 2000, 5000, 10000, 15000, 20000, 25000];
 
 const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
   const { isBangla, language } = useLanguage();
@@ -99,6 +95,8 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     ...(modalColorSetting || {}),
   };
 
+  const { withdrawEnabled: withdrawOtpEnabled } = useOtpSetting();
+
   const [loading, setLoading] = useState(true);
   const [eligibilityLoading, setEligibilityLoading] = useState(true);
   const [methods, setMethods] = useState([]);
@@ -109,12 +107,15 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
   const [showAddWallet, setShowAddWallet] = useState(false);
 
   const [amount, setAmount] = useState("");
-  const [walletType, setWalletType] = useState("personal");
-  const [walletNumber, setWalletNumber] = useState("");
-  const [walletLabel, setWalletLabel] = useState("");
 
-  const [submittingWallet, setSubmittingWallet] = useState(false);
   const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
+
+  // Withdraw-confirm OTP step: submitting the request itself needs a
+  // second OTP (sent to the registration phone), same as adding a wallet.
+  const [confirmStep, setConfirmStep] = useState("form");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [sendingOtp, setSendingOtp] = useState(false);
 
   const [eligibility, setEligibility] = useState({
     eligible: false,
@@ -133,31 +134,32 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
       ? "উইথড্র করতে আগে লগইন করুন"
       : "Please login first to withdraw.",
     method: isBangla ? "উইথড্র মেথড নির্বাচন করুন" : "Select Withdraw Method",
-    wallet: isBangla ? "ওয়ালেট নির্বাচন করুন" : "Select Wallet",
-    addWallet: isBangla ? "ওয়ালেট যোগ করুন" : "Add Wallet",
-    closeWallet: isBangla ? "ওয়ালেট ফর্ম বন্ধ করুন" : "Close Wallet Form",
+    wallet: isBangla ? "ওয়ালেট নির্বাচন করুন" : "Select Wallet",
+    addWallet: isBangla ? "ওয়ালেট যোগ করুন" : "Add Wallet",
+    closeWallet: isBangla ? "ওয়ালেট ফর্ম বন্ধ করুন" : "Close Wallet Form",
     maxWalletText: isBangla
-      ? "প্রতিটি মেথডে সর্বোচ্চ ২টি নাম্বার যোগ করা যাবে।"
-      : "You can add maximum 2 numbers for each method.",
+      ? "রেজিস্ট্রেশন নাম্বার সবসময় available, এর বাইরে সর্বোচ্চ ৪টি নাম্বার যোগ করা যাবে।"
+      : "The registration number is always available; you can add up to 4 more numbers.",
     maxWalletReached: isBangla
-      ? "এই মেথডে ২টির বেশি নাম্বার যোগ করা যাবে না।"
-      : "You cannot add more than 2 numbers for this method.",
-    walletType: isBangla ? "ওয়ালেট টাইপ" : "Wallet Type",
-    walletNumber: isBangla ? "ওয়ালেট নাম্বার" : "Wallet Number",
-    walletLabelPlaceholder: isBangla ? "যেমন: আমার নাম্বার" : "e.g. My number",
+      ? "৪টির বেশি নাম্বার যোগ করা যাবে না।"
+      : "You cannot add more than 4 numbers.",
+    registrationNumber: isBangla
+      ? "রেজিস্ট্রেশন নাম্বার"
+      : "Registration Number",
     amount: isBangla ? "উইথড্র এমাউন্ট" : "Withdraw Amount",
     enterAmount: isBangla ? "এমাউন্ট লিখুন" : "Enter amount",
     min: isBangla ? "সর্বনিম্ন" : "Min",
     max: isBangla ? "সর্বোচ্চ" : "Max",
     submit: isBangla ? "উইথড্র সাবমিট" : "Submit Withdraw",
+    confirmWithdraw: isBangla ? "কনফার্ম করে উইথড্র করুন" : "Confirm & Withdraw",
     processing: isBangla ? "প্রসেস হচ্ছে..." : "Processing...",
-    walletSaving: isBangla ? "ওয়ালেট সেভ হচ্ছে..." : "Saving wallet...",
+    sendingOtp: isBangla ? "OTP পাঠানো হচ্ছে..." : "Sending OTP...",
     noMethod: isBangla
-      ? "কোনো active withdraw method পাওয়া যায়নি"
+      ? "কোনো active withdraw method পাওয়া যায়নি"
       : "No active withdraw method found",
     noWallet: isBangla
-      ? "এই মেথডের জন্য কোনো wallet নেই। Add Wallet বাটনে ক্লিক করে wallet যোগ করুন।"
-      : "No wallet for this method. Click Add Wallet to add one.",
+      ? "কোনো wallet নেই। Add Wallet বাটনে ক্লিক করে wallet যোগ করুন।"
+      : "No wallet found. Click Add Wallet to add one.",
     turnoverTitle: isBangla ? "টার্নওভার বাকি আছে" : "Turnover Required",
     pendingTitle: isBangla ? "পেন্ডিং উইথড্র আছে" : "Pending Withdraw Exists",
     eligibleTitle: isBangla ? "উইথড্র করা যাবে" : "Withdraw Available",
@@ -170,12 +172,8 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     invalidMethod: isBangla
       ? "একটি withdraw method নির্বাচন করুন"
       : "Please select withdraw method",
-    invalidPhone: isBangla
-      ? "সঠিক বাংলাদেশি নাম্বার দিন"
-      : "Enter a valid Bangladeshi phone number",
-    walletCreated: isBangla ? "ওয়ালেট যোগ হয়েছে" : "Wallet added",
     requestCreated: isBangla
-      ? "উইথড্র request submit হয়েছে"
+      ? "উইথড্র request submit হয়েছে"
       : "Withdraw request submitted",
     secureText: isBangla
       ? "টার্নওভার পূরণ না হলে withdraw করা যাবে না"
@@ -190,26 +188,25 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     [methods, selectedMethodId],
   );
 
-  const methodWallets = useMemo(() => {
-    if (!selectedMethodId) return [];
-    return wallets.filter(
-      (item) => String(item.methodId) === String(selectedMethodId),
-    );
-  }, [wallets, selectedMethodId]);
-
-  const selectedWallet = useMemo(
-    () =>
-      methodWallets.find(
-        (item) => String(item._id) === String(selectedWalletId),
-      ) || null,
-    [methodWallets, selectedWalletId],
-  );
-
   const amountNum = Number(amount || 0);
   const minAmount = Number(selectedMethod?.minimumWithdrawAmount || 0);
   const maxAmount = Number(selectedMethod?.maximumWithdrawAmount || 0);
   const userBalance = Number(user?.balance || 0);
-  const walletLimitReached = methodWallets.length >= 2;
+
+  const manualWalletCount = wallets.filter(
+    (item) => !item.isAutoRegistration,
+  ).length;
+  const walletLimitReached = manualWalletCount >= MANUAL_WALLET_CAP;
+
+  const visiblePresets = useMemo(
+    () =>
+      PRESET_AMOUNTS.filter(
+        (value) =>
+          (minAmount <= 0 || value >= minAmount) &&
+          (maxAmount <= 0 || value <= maxAmount),
+      ),
+    [minAmount, maxAmount],
+  );
 
   const amountValid =
     Number.isFinite(amountNum) &&
@@ -224,7 +221,8 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     selectedMethodId &&
     selectedWalletId &&
     amountValid &&
-    !submittingWithdraw;
+    !submittingWithdraw &&
+    !sendingOtp;
 
   const loadMethods = async () => {
     const { data } = await api.get("/api/withdraw-methods/public");
@@ -237,19 +235,13 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     }
   };
 
-  const loadWallets = async (methodId = selectedMethodId) => {
-    if (!methodId || !isAuthenticated) return;
+  const loadWallets = async () => {
+    if (!isAuthenticated) return;
 
-    const { data } = await api.get("/api/e-wallets", {
-      params: { methodId },
-    });
-
+    const { data } = await api.get("/api/e-wallets");
     const list = Array.isArray(data?.data) ? data.data : [];
 
-    setWallets((prev) => {
-      const other = prev.filter((item) => item.methodId !== methodId);
-      return [...other, ...list];
-    });
+    setWallets(list);
 
     const defaultWallet = list.find((item) => item.isDefault) || list[0];
     setSelectedWalletId(defaultWallet?._id || "");
@@ -292,72 +284,86 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setConfirmStep("form");
+      setMaskedPhone("");
+      setResendSeconds(0);
+      return;
+    }
 
     setShowAddWallet(false);
     loadAll();
+    loadWallets().catch((error) => {
+      toast.error(error?.response?.data?.message || "Failed to load wallets");
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
-    if (!open || !selectedMethodId || !isAuthenticated) return;
+    if (resendSeconds <= 0) return undefined;
 
-    setShowAddWallet(false);
-    loadWallets(selectedMethodId).catch((error) => {
-      toast.error(error?.response?.data?.message || "Failed to load wallets");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedMethodId, isAuthenticated]);
+    const timer = setInterval(() => {
+      setResendSeconds((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [resendSeconds]);
 
   const handleSelectMethod = (methodId) => {
     setSelectedMethodId(methodId);
-    setSelectedWalletId("");
-    setShowAddWallet(false);
   };
 
-  const handleAddWallet = async () => {
-    if (!isAuthenticated) return toast.error(t.loginRequired);
-    if (!selectedMethodId) return toast.error(t.invalidMethod);
+  const handleWalletCreated = async (createdWallet) => {
+    await loadWallets();
+    setSelectedWalletId(createdWallet?._id || "");
+  };
 
-    if (walletLimitReached) {
-      toast.error(t.maxWalletReached);
-      return;
-    }
-
-    const number = normalizePhone(walletNumber);
-
-    if (!/^01[3-9]\d{8}$/.test(number)) {
-      toast.error(t.invalidPhone);
-      return;
-    }
-
+  const submitWithdraw = async (otpValue = "") => {
     try {
-      setSubmittingWallet(true);
+      setSubmittingWithdraw(true);
 
-      const { data } = await api.post("/api/e-wallets", {
+      const { data } = await api.post("/api/withdraw-requests", {
         methodId: selectedMethodId,
-        walletType,
-        walletNumber: number,
-        label: walletLabel,
+        walletId: selectedWalletId,
+        amount: amountNum,
+        otp: otpValue,
       });
 
       if (!data?.success) {
-        throw new Error(data?.message || "Wallet create failed");
+        throw new Error(data?.message || "Withdraw request failed");
       }
 
-      toast.success(data?.message || t.walletCreated);
+      toast.success(data?.message || t.requestCreated);
+      setAmount("");
+      setConfirmStep("form");
 
-      setWalletNumber("");
-      setWalletLabel("");
-      setWalletType("personal");
-
-      await loadWallets(selectedMethodId);
-      setSelectedWalletId(data?.data?._id || "");
-      setShowAddWallet(false);
+      await loadEligibility();
+      onClose?.();
+      onHistoryClick?.();
     } catch (error) {
       toast.error(error?.response?.data?.message || error?.message);
     } finally {
-      setSubmittingWallet(false);
+      setSubmittingWithdraw(false);
+    }
+  };
+
+  const handleSendWithdrawOtp = async () => {
+    try {
+      setSendingOtp(true);
+
+      const { data } = await api.post("/api/e-wallets/send-otp");
+
+      if (!data?.success) {
+        throw new Error(data?.message || "OTP send failed");
+      }
+
+      setMaskedPhone(data?.maskedPhone || "");
+      setResendSeconds(Number(data?.resendAfter || 60));
+      setConfirmStep("otp");
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message);
+    } finally {
+      setSendingOtp(false);
     }
   };
 
@@ -369,30 +375,12 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
     if (!selectedWalletId) return toast.error(t.invalidWallet);
     if (!amountValid) return toast.error(t.invalidAmount);
 
-    try {
-      setSubmittingWithdraw(true);
-
-      const { data } = await api.post("/api/withdraw-requests", {
-        methodId: selectedMethodId,
-        walletId: selectedWalletId,
-        amount: amountNum,
-      });
-
-      if (!data?.success) {
-        throw new Error(data?.message || "Withdraw request failed");
-      }
-
-      toast.success(data?.message || t.requestCreated);
-      setAmount("");
-
-      await loadEligibility();
-      onClose?.();
-      onHistoryClick?.();
-    } catch (error) {
-      toast.error(error?.response?.data?.message || error?.message);
-    } finally {
-      setSubmittingWithdraw(false);
+    if (withdrawOtpEnabled) {
+      handleSendWithdrawOtp();
+      return;
     }
+
+    await submitWithdraw("");
   };
 
   const EligibilityBox = () => {
@@ -537,14 +525,39 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                   {t.loading}
                 </div>
               </div>
+            ) : confirmStep === "otp" ? (
+              <div
+                className="flex-1 overflow-y-auto px-4 pb-5 pt-4"
+                style={{ backgroundColor: colors.modalBg }}
+              >
+                <div
+                  className="rounded-[4px] border p-3 shadow-sm"
+                  style={{
+                    backgroundColor: colors.cardBg,
+                    borderColor: colors.cardBorder,
+                  }}
+                >
+                  <OtpVerifyBox
+                    maskedPhone={maskedPhone}
+                    resendSeconds={resendSeconds}
+                    onResend={handleSendWithdrawOtp}
+                    sendingOtp={sendingOtp}
+                    onVerify={submitWithdraw}
+                    verifying={submittingWithdraw}
+                    onBack={() => setConfirmStep("form")}
+                    colors={colors}
+                    isBangla={isBangla}
+                    submitLabel={t.confirmWithdraw}
+                    submittingLabel={t.processing}
+                  />
+                </div>
+              </div>
             ) : (
               <>
                 <div
                   className="flex-1 overflow-y-auto px-4 pb-5 pt-3"
                   style={{ backgroundColor: colors.modalBg }}
                 >
-                  <EligibilityBox />
-
                   <div
                     className="mt-4 rounded-[4px] border p-3 shadow-sm"
                     style={{
@@ -655,16 +668,6 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                         {t.noMethod}
                       </p>
                     )}
-
-                    {selectedMethod ? (
-                      <div
-                        className="mt-2 text-[12px]"
-                        style={{ color: colors.mutedText }}
-                      >
-                        {t.min}: {money(minAmount)} | {t.max}:{" "}
-                        {maxAmount > 0 ? money(maxAmount) : "∞"}
-                      </div>
-                    ) : null}
                   </div>
 
                   <div
@@ -719,54 +722,28 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                       {t.maxWalletText}
                     </p>
 
-                    {methodWallets.length ? (
-                      <div className="mt-3 space-y-2">
-                        {methodWallets.map((wallet) => {
-                          const active =
-                            String(wallet._id) === String(selectedWalletId);
-
-                          return (
-                            <button
-                              key={wallet._id}
-                              type="button"
-                              onClick={() => setSelectedWalletId(wallet._id)}
-                              className="flex w-full cursor-pointer items-center justify-between rounded-[5px] border p-3 text-left transition"
-                              style={{
-                                backgroundColor: active
-                                  ? colors.summaryBg
-                                  : colors.inputBg,
-                                borderColor: active
-                                  ? colors.primaryBg
-                                  : colors.cardBorder,
-                              }}
-                            >
-                              <div>
-                                <p
-                                  className="text-[13px] font-bold"
-                                  style={{ color: colors.normalText }}
-                                >
-                                  {wallet.walletNumber}
-                                </p>
-                                <p
-                                  className="mt-1 text-[11px]"
-                                  style={{ color: colors.mutedText }}
-                                >
-                                  {wallet.label ||
-                                    wallet.walletType ||
-                                    "personal"}
-                                </p>
-                              </div>
-
-                              {active ? (
-                                <CheckCircle2
-                                  size={18}
-                                  style={{ color: colors.successBg }}
-                                />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
+                    {wallets.length ? (
+                      <select
+                        value={selectedWalletId}
+                        onChange={(e) => setSelectedWalletId(e.target.value)}
+                        className="mt-3 h-[42px] w-full cursor-pointer rounded-[4px] border px-3 text-[13px] outline-none"
+                        style={{
+                          backgroundColor: colors.inputBg,
+                          color: colors.inputText,
+                          borderColor: colors.inputBorder,
+                        }}
+                      >
+                        {wallets.map((wallet) => (
+                          <option key={wallet._id} value={wallet._id}>
+                            {wallet.walletNumber}
+                            {wallet.isAutoRegistration
+                              ? ` (${t.registrationNumber})`
+                              : wallet.label
+                                ? ` (${wallet.label})`
+                                : ""}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
                       <p
                         className="mt-3 text-[12px]"
@@ -776,106 +753,13 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                       </p>
                     )}
 
-                    <AnimatePresence>
-                      {showAddWallet && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0, y: -6 }}
-                          animate={{ opacity: 1, height: "auto", y: 0 }}
-                          exit={{ opacity: 0, height: 0, y: -6 }}
-                          transition={{ duration: 0.2 }}
-                          className="overflow-hidden"
-                        >
-                          <div
-                            className="mt-3 grid grid-cols-1 gap-2 rounded-[5px] border p-3"
-                            style={{
-                              backgroundColor: colors.cardBg,
-                              borderColor: colors.cardBorder,
-                            }}
-                          >
-                            {walletLimitReached ? (
-                              <div className="rounded bg-yellow-50 p-2 text-[12px] text-yellow-700">
-                                {t.maxWalletReached}
-                              </div>
-                            ) : (
-                              <>
-                                <select
-                                  value={walletType}
-                                  onChange={(e) =>
-                                    setWalletType(e.target.value)
-                                  }
-                                  className="h-[40px] rounded-[4px] border px-3 text-[13px] outline-none"
-                                  style={{
-                                    backgroundColor: colors.inputBg,
-                                    color: colors.inputText,
-                                    borderColor: colors.inputBorder,
-                                  }}
-                                >
-                                  {walletTypes.map((type) => (
-                                    <option key={type.key} value={type.key}>
-                                      {isBangla ? type.bn : type.en}
-                                    </option>
-                                  ))}
-                                </select>
-
-                                <input
-                                  value={walletNumber}
-                                  onChange={(e) =>
-                                    setWalletNumber(
-                                      normalizePhone(e.target.value),
-                                    )
-                                  }
-                                  placeholder="01XXXXXXXXX"
-                                  inputMode="numeric"
-                                  className="h-[40px] rounded-[4px] border px-3 text-[13px] outline-none"
-                                  style={{
-                                    backgroundColor: colors.inputBg,
-                                    color: colors.inputText,
-                                    borderColor: colors.inputBorder,
-                                  }}
-                                />
-
-                                <input
-                                  value={walletLabel}
-                                  onChange={(e) =>
-                                    setWalletLabel(e.target.value)
-                                  }
-                                  placeholder={t.walletLabelPlaceholder}
-                                  className="h-[40px] rounded-[4px] border px-3 text-[13px] outline-none"
-                                  style={{
-                                    backgroundColor: colors.inputBg,
-                                    color: colors.inputText,
-                                    borderColor: colors.inputBorder,
-                                  }}
-                                />
-
-                                <button
-                                  type="button"
-                                  onClick={handleAddWallet}
-                                  disabled={
-                                    submittingWallet || !selectedMethodId
-                                  }
-                                  className="h-[36px] cursor-pointer rounded-[4px] text-[13px] font-bold disabled:cursor-not-allowed"
-                                  style={{
-                                    backgroundColor:
-                                      submittingWallet || !selectedMethodId
-                                        ? colors.disabledBg
-                                        : colors.primaryBg,
-                                    color:
-                                      submittingWallet || !selectedMethodId
-                                        ? colors.disabledText
-                                        : colors.primaryText,
-                                  }}
-                                >
-                                  {submittingWallet
-                                    ? t.walletSaving
-                                    : t.addWallet}
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <AddEWalletFlow
+                      open={showAddWallet}
+                      onClose={() => setShowAddWallet(false)}
+                      onCreated={handleWalletCreated}
+                      colors={colors}
+                      isBangla={isBangla}
+                    />
                   </div>
 
                   <div
@@ -885,13 +769,57 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                       borderColor: colors.cardBorder,
                     }}
                   >
-                    <div
-                      className="flex items-center gap-2"
-                      style={{ color: colors.primaryBg }}
-                    >
-                      <Wallet size={18} />
-                      <span className="text-[14px] font-bold">{t.amount}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="flex items-center gap-2"
+                        style={{ color: colors.primaryBg }}
+                      >
+                        <Wallet size={18} />
+                        <span className="text-[14px] font-bold">
+                          {t.amount}
+                        </span>
+                      </div>
+
+                      {selectedMethod ? (
+                        <span
+                          className="text-[11px] font-semibold"
+                          style={{ color: colors.mutedText }}
+                        >
+                          {money(minAmount)} -{" "}
+                          {maxAmount > 0 ? money(maxAmount) : "∞"}
+                        </span>
+                      ) : null}
                     </div>
+
+                    {visiblePresets.length > 0 && (
+                      <div className="mt-3 grid grid-cols-4 gap-2">
+                        {visiblePresets.map((value) => {
+                          const active = String(value) === String(amount);
+
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setAmount(String(value))}
+                              className="h-[38px] cursor-pointer rounded-[4px] border text-[13px] font-bold transition"
+                              style={{
+                                backgroundColor: active
+                                  ? colors.summaryBg
+                                  : colors.inputBg,
+                                borderColor: active
+                                  ? colors.primaryBg
+                                  : colors.cardBorder,
+                                color: active
+                                  ? colors.summaryText
+                                  : colors.normalText,
+                              }}
+                            >
+                              {value.toLocaleString("en-US")}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <input
                       value={amount}
@@ -907,32 +835,9 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                         borderColor: colors.inputBorder,
                       }}
                     />
-
-                    <div
-                      className="mt-2 text-[12px]"
-                      style={{ color: colors.mutedText }}
-                    >
-                      {t.min}: {money(minAmount)} | {t.max}:{" "}
-                      {maxAmount > 0 ? money(maxAmount) : "∞"}
-                    </div>
                   </div>
-
-                  <div
-                    className="mt-4 rounded-[4px] border p-3"
-                    style={{
-                      backgroundColor: colors.sectionBg,
-                      borderColor: colors.sectionBorder,
-                    }}
-                  >
-                    <div
-                      className="flex items-start gap-2"
-                      style={{ color: colors.sectionText }}
-                    >
-                      <Info size={17} className="mt-[1px] shrink-0" />
-                      <p className="text-[12px] leading-[18px]">
-                        {t.secureText}
-                      </p>
-                    </div>
+                  <div className="mt-4">
+                    <EligibilityBox />
                   </div>
                 </div>
 
@@ -940,18 +845,6 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                   className="shrink-0 px-4 pb-4"
                   style={{ backgroundColor: colors.modalBg }}
                 >
-                  <div
-                    className="mb-3 flex items-center justify-center gap-2 text-[12px]"
-                    style={{ color: colors.mutedText }}
-                  >
-                    <ShieldCheck size={14} />
-                    <span>
-                      {eligibility?.eligible
-                        ? t.eligibleTitle
-                        : eligibility?.message || t.secureText}
-                    </span>
-                  </div>
-
                   <button
                     type="button"
                     onClick={handleWithdraw}
@@ -966,7 +859,11 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
                         : colors.disabledText,
                     }}
                   >
-                    {submittingWithdraw ? t.processing : t.submit}
+                    {sendingOtp
+                      ? t.sendingOtp
+                      : submittingWithdraw
+                        ? t.processing
+                        : t.submit}
 
                     {!canWithdraw ? (
                       <span

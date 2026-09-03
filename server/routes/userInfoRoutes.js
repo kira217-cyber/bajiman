@@ -13,11 +13,6 @@ const cleanEmail = (value = "") =>
     .trim()
     .toLowerCase();
 
-const cleanPhone = (value = "") =>
-  String(value || "")
-    .replace(/\s+/g, "")
-    .trim();
-
 const safeUser = (user) => {
   return {
     id: user._id,
@@ -78,7 +73,11 @@ router.get("/me", protectUser, async (req, res) => {
 ========================= */
 router.patch("/me", protectUser, async (req, res) => {
   try {
-    const { email, countryCode, phone, firstName, lastName } = req.body || {};
+    // countryCode/phone are intentionally NOT accepted here — like userId,
+    // the registration phone number is a fixed anchor (withdraw OTP and
+    // the auto e-wallet slot are both tied to it) and can't be changed
+    // from the profile screen.
+    const { email, firstName, lastName } = req.body || {};
 
     const user = await User.findById(req.user.id);
 
@@ -98,30 +97,6 @@ router.patch("/me", protectUser, async (req, res) => {
       updateData.email = nextEmail;
     }
 
-    if (countryCode !== undefined) {
-      const nextCountryCode = cleanText(countryCode);
-
-      if (!nextCountryCode) {
-        return errorResponse(res, "Country code is required", 400);
-      }
-
-      updateData.countryCode = nextCountryCode;
-    }
-
-    if (phone !== undefined) {
-      const nextPhone = cleanPhone(phone);
-
-      if (!nextPhone) {
-        return errorResponse(res, "Phone number is required", 400);
-      }
-
-      if (nextPhone.length < 6 || nextPhone.length > 20) {
-        return errorResponse(res, "Invalid phone number", 400);
-      }
-
-      updateData.phone = nextPhone;
-    }
-
     if (firstName !== undefined) {
       updateData.firstName = cleanText(firstName).slice(0, 50);
     }
@@ -132,24 +107,6 @@ router.patch("/me", protectUser, async (req, res) => {
 
     if (Object.keys(updateData).length === 0) {
       return errorResponse(res, "No update data provided", 400);
-    }
-
-    if (
-      updateData.phone !== undefined ||
-      updateData.countryCode !== undefined
-    ) {
-      const nextPhone = updateData.phone ?? user.phone;
-      const nextCountryCode = updateData.countryCode ?? user.countryCode;
-
-      const exists = await User.findOne({
-        _id: { $ne: user._id },
-        countryCode: nextCountryCode,
-        phone: nextPhone,
-      }).select("_id");
-
-      if (exists) {
-        return errorResponse(res, "Phone number already used", 409);
-      }
     }
 
     const updatedUser = await User.findByIdAndUpdate(

@@ -1,17 +1,32 @@
 import express from "express";
+import axios from "axios";
 import mongoose from "mongoose";
 import EWallet from "../models/EWallet.js";
-import WithdrawMethod from "../models/WithdrawMethod.js";
+import User from "../models/User.js";
 import protectUser from "../middleware/protectUser.js";
+import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
 
 const router = express.Router();
 
-const getUserIdFromReq = (req) => req.user?.id || req.user?._id || null;
+const MANUAL_WALLET_CAP = 4;
+const OTP_EXPIRE_MS = 3 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
 
-const normalizeMethodId = (value) =>
-  String(value || "")
-    .trim()
-    .toUpperCase();
+// Keyed by userId (string) — this OTP always goes to the authenticated
+// user's own registered phone, never an arbitrary number from the request
+// body. Must be a string, not the raw ObjectId: protectUser re-derives
+// req.user on every request, so the ObjectId is a *new object instance*
+// each time even for the same user — and Map.get/set use reference
+// equality for object keys, so an ObjectId key would never match across
+// the send-otp and create-wallet requests. Shared with withdrawRequestRoutes.js
+// (via the exported check/consume helpers below), since a withdraw
+// confirmation is also just "OTP to my own registered phone".
+const userOtpStore = new Map();
+
+const getUserIdFromReq = (req) => {
+  const id = req.user?.id || req.user?._id || null;
+  return id ? String(id) : null;
+};
 
 const normalizeWalletType = (value) =>
   String(value || "")
@@ -22,12 +37,197 @@ const normalizeWalletNumber = (value) => String(value || "").trim();
 
 const normalizeLabel = (value) => String(value || "").trim();
 
+const clean = (value = "") => String(value || "").trim();
+
 const validWalletTypes = ["personal", "agent", "merchant"];
 
 const validateWalletNumber = (walletNumber) =>
   /^01[3-9]\d{8}$/.test(walletNumber);
 
-/* USER: list my wallets */
+const buildSmsPhoneNumber = (countryCode, phone) => {
+  const cc = String(countryCode || "").trim();
+  let ph = String(phone || "").trim();
+
+  if (cc === "+880" && ph.startsWith("0")) {
+    ph = ph.slice(1);
+  }
+
+  return `${cc.replace("+", "")}${ph}`;
+};
+
+const maskPhone = (phone = "") => {
+  const value = String(phone || "");
+  if (value.length <= 4) return value;
+  return `${value.slice(0, 2)}${"*".repeat(value.length - 4)}${value.slice(-2)}`;
+};
+
+const getApiKey = (setting) =>
+  (setting?.apiKey || "").trim() || process.env.OTP_API_KEY || "";
+
+// Every user gets exactly one auto e-wallet, tied to their registration
+// phone number, that they can never edit or delete — it's always
+// available for withdraw. Idempotent (upsert), so it's safe to call on
+// every GET /api/e-wallets, including for users who registered before
+// this feature existed.
+const ensureRegistrationWallet = async (userId, user) => {
+  if (!user?.phone) return null;
+
+  try {
+    return await EWallet.findOneAndUpdate(
+      { user: userId, isAutoRegistration: true },
+      {
+        $setOnInsert: {
+          user: userId,
+          walletType: "personal",
+          walletNumber: user.phone,
+          label: "Registration Number",
+          isAutoRegistration: true,
+          isDefault: true,
+        },
+      },
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
+    );
+  } catch (error) {
+    // The registration number was already saved as a manual wallet before
+    // this feature existed — the unique {user, walletNumber} index blocks
+    // inserting a second doc for the same number, so promote that
+    // existing one to the auto slot instead.
+    if (error?.code === 11000) {
+      return EWallet.findOneAndUpdate(
+        { user: userId, walletNumber: user.phone },
+        { $set: { isAutoRegistration: true, label: "Registration Number" } },
+        { returnDocument: "after" },
+      );
+    }
+
+    throw error;
+  }
+};
+
+// Shared by the e-wallet-add flow and the withdraw-confirm flow — both are
+// "verify the OTP sent to my own registered phone".
+export const checkUserOtp = (userId, otp) => {
+  const savedOtp = userOtpStore.get(userId);
+
+  if (!savedOtp) {
+    return { ok: false, message: "OTP not found. Please send OTP again" };
+  }
+
+  if (Date.now() > savedOtp.expiresAt) {
+    userOtpStore.delete(userId);
+    return { ok: false, message: "OTP expired. Please send OTP again" };
+  }
+
+  if (String(savedOtp.otp) !== String(otp || "").trim()) {
+    return { ok: false, message: "Invalid OTP" };
+  }
+
+  return { ok: true };
+};
+
+export const consumeUserOtp = (userId) => {
+  userOtpStore.delete(userId);
+};
+
+/* USER: send OTP to my own registered phone (used both when adding a new
+   e-wallet number and when confirming a withdraw request) */
+router.post("/send-otp", protectUser, async (req, res) => {
+  try {
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (!otpSetting.withdrawEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP is disabled for withdraw",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user?.countryCode || !user?.phone) {
+      return res.status(404).json({
+        success: false,
+        message: "Your account has no registered phone number",
+      });
+    }
+
+    if (user.countryCode !== "+880") {
+      return res.status(400).json({
+        success: false,
+        message: "OTP is only supported for Bangladesh numbers",
+      });
+    }
+
+    const apiKey = getApiKey(otpSetting);
+
+    if (!apiKey) {
+      return res
+        .status(500)
+        .json({ success: false, message: "OTP API key is missing" });
+    }
+
+    const oldOtp = userOtpStore.get(userId);
+
+    if (
+      oldOtp?.lastSentAt &&
+      Date.now() - oldOtp.lastSentAt < RESEND_COOLDOWN_MS
+    ) {
+      const waitSeconds = Math.ceil(
+        (RESEND_COOLDOWN_MS - (Date.now() - oldOtp.lastSentAt)) / 1000,
+      );
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${waitSeconds}s before sending OTP again`,
+        waitSeconds,
+      });
+    }
+
+    const { data } = await axios.post(
+      "https://api.o-sms.com/api/service/send-otp",
+      { phoneNumber: buildSmsPhoneNumber(user.countryCode, user.phone) },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (!data?.success || !data?.otp) {
+      return res
+        .status(400)
+        .json({ success: false, message: data?.message || "OTP send failed" });
+    }
+
+    userOtpStore.set(userId, {
+      otp: String(data.otp).trim(),
+      expiresAt: Date.now() + OTP_EXPIRE_MS,
+      lastSentAt: Date.now(),
+    });
+
+    return res.json({
+      success: true,
+      message: "OTP sent successfully",
+      resendAfter: 60,
+      maskedPhone: `${user.countryCode} ${maskPhone(user.phone)}`,
+    });
+  } catch (error) {
+    console.error("EWALLET SEND OTP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message:
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to send OTP",
+    });
+  }
+});
+
+/* USER: list my wallets (registration number + up to 4 manually-added, shared across every withdraw method) */
 router.get("/", protectUser, async (req, res) => {
   try {
     const userId = getUserIdFromReq(req);
@@ -39,18 +239,14 @@ router.get("/", protectUser, async (req, res) => {
       });
     }
 
-    const methodId = normalizeMethodId(req.query.methodId);
+    const user = await User.findById(userId).select("phone countryCode");
+    await ensureRegistrationWallet(userId, user);
 
-    const q = {
+    const items = await EWallet.find({
       user: userId,
       isActive: true,
-    };
-
-    if (methodId) {
-      q.methodId = methodId;
-    }
-
-    const items = await EWallet.find(q).sort({
+    }).sort({
+      isAutoRegistration: -1,
       isDefault: -1,
       createdAt: -1,
     });
@@ -68,7 +264,7 @@ router.get("/", protectUser, async (req, res) => {
   }
 });
 
-/* USER: create wallet */
+/* USER: create wallet (OTP-verified) */
 router.post("/", protectUser, async (req, res) => {
   try {
     const userId = getUserIdFromReq(req);
@@ -80,17 +276,10 @@ router.post("/", protectUser, async (req, res) => {
       });
     }
 
-    const methodId = normalizeMethodId(req.body?.methodId);
     const walletType = normalizeWalletType(req.body?.walletType);
     const walletNumber = normalizeWalletNumber(req.body?.walletNumber);
     const label = normalizeLabel(req.body?.label);
-
-    if (!methodId) {
-      return res.status(400).json({
-        success: false,
-        message: "methodId is required",
-      });
-    }
+    const otp = clean(req.body?.otp);
 
     if (!validWalletTypes.includes(walletType)) {
       return res.status(400).json({
@@ -113,22 +302,40 @@ router.post("/", protectUser, async (req, res) => {
       });
     }
 
-    const method = await WithdrawMethod.findOne({
-      methodId,
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (otpSetting.withdrawEnabled) {
+      if (!otp) {
+        return res.status(400).json({
+          success: false,
+          message: "OTP is required",
+        });
+      }
+
+      const result = checkUserOtp(userId, otp);
+
+      if (!result.ok) {
+        return res.status(400).json({ success: false, message: result.message });
+      }
+    }
+
+    const count = await EWallet.countDocuments({
+      user: userId,
       isActive: true,
+      isAutoRegistration: { $ne: true },
     });
 
-    if (!method) {
-      return res.status(404).json({
+    if (count >= MANUAL_WALLET_CAP) {
+      return res.status(400).json({
         success: false,
-        message: "Withdraw method not found or inactive",
+        message: `You can add maximum ${MANUAL_WALLET_CAP} numbers`,
       });
     }
 
     const exists = await EWallet.findOne({
       user: userId,
-      methodId,
       walletNumber,
+      isActive: true,
     });
 
     if (exists) {
@@ -138,20 +345,17 @@ router.post("/", protectUser, async (req, res) => {
       });
     }
 
-    const count = await EWallet.countDocuments({
-      user: userId,
-      methodId,
-      isActive: true,
-    });
-
     const created = await EWallet.create({
       user: userId,
-      methodId,
       walletType,
       walletNumber,
       label,
       isDefault: count === 0,
     });
+
+    if (otpSetting.withdrawEnabled) {
+      consumeUserOtp(userId);
+    }
 
     return res.status(201).json({
       success: true,
@@ -175,7 +379,7 @@ router.post("/", protectUser, async (req, res) => {
   }
 });
 
-/* USER: update wallet */
+/* USER: update wallet (the auto registration wallet can't be edited) */
 router.put("/:id", protectUser, async (req, res) => {
   try {
     const userId = getUserIdFromReq(req);
@@ -207,7 +411,13 @@ router.put("/:id", protectUser, async (req, res) => {
       });
     }
 
-    const methodId = normalizeMethodId(req.body?.methodId || existing.methodId);
+    if (existing.isAutoRegistration) {
+      return res.status(400).json({
+        success: false,
+        message: "Registration number cannot be edited",
+      });
+    }
+
     const walletType = normalizeWalletType(
       req.body?.walletType || existing.walletType,
     );
@@ -217,13 +427,6 @@ router.put("/:id", protectUser, async (req, res) => {
     const label = normalizeLabel(
       req.body?.label !== undefined ? req.body.label : existing.label,
     );
-
-    if (!methodId) {
-      return res.status(400).json({
-        success: false,
-        message: "methodId is required",
-      });
-    }
 
     if (!validWalletTypes.includes(walletType)) {
       return res.status(400).json({
@@ -246,22 +449,10 @@ router.put("/:id", protectUser, async (req, res) => {
       });
     }
 
-    const method = await WithdrawMethod.findOne({
-      methodId,
-      isActive: true,
-    });
-
-    if (!method) {
-      return res.status(404).json({
-        success: false,
-        message: "Withdraw method not found or inactive",
-      });
-    }
-
     const duplicate = await EWallet.findOne({
       user: userId,
-      methodId,
       walletNumber,
+      isActive: true,
       _id: { $ne: existing._id },
     });
 
@@ -272,7 +463,6 @@ router.put("/:id", protectUser, async (req, res) => {
       });
     }
 
-    existing.methodId = methodId;
     existing.walletType = walletType;
     existing.walletNumber = walletNumber;
     existing.label = label;
@@ -301,7 +491,7 @@ router.put("/:id", protectUser, async (req, res) => {
   }
 });
 
-/* USER: soft delete wallet */
+/* USER: soft delete wallet (the auto registration wallet can't be deleted) */
 router.delete("/:id", protectUser, async (req, res) => {
   try {
     const userId = getUserIdFromReq(req);
@@ -333,15 +523,21 @@ router.delete("/:id", protectUser, async (req, res) => {
       });
     }
 
+    if (existing.isAutoRegistration) {
+      return res.status(400).json({
+        success: false,
+        message: "Registration number cannot be deleted",
+      });
+    }
+
     existing.isActive = false;
     existing.isDefault = false;
     await existing.save();
 
     const nextDefault = await EWallet.findOne({
       user: userId,
-      methodId: existing.methodId,
       isActive: true,
-    }).sort({ createdAt: -1 });
+    }).sort({ isAutoRegistration: -1, createdAt: -1 });
 
     if (nextDefault) {
       nextDefault.isDefault = true;
@@ -394,15 +590,8 @@ router.patch("/:id/default", protectUser, async (req, res) => {
     }
 
     await EWallet.updateMany(
-      {
-        user: userId,
-        methodId: existing.methodId,
-      },
-      {
-        $set: {
-          isDefault: false,
-        },
-      },
+      { user: userId },
+      { $set: { isDefault: false } },
     );
 
     existing.isDefault = true;

@@ -9,9 +9,11 @@ const EWalletSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Kept for backward compatibility with existing rows only — wallets are
+    // no longer scoped to one withdraw method, they're shared across all of
+    // them (see eWalletRoutes.js).
     methodId: {
       type: String,
-      required: true,
       trim: true,
       uppercase: true,
       index: true,
@@ -46,14 +48,20 @@ const EWalletSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+
+    // The one wallet auto-created from the user's own registration phone
+    // number. Always available for withdraw, doesn't count against the
+    // manual-add cap, and can't be edited or deleted by the user.
+    isAutoRegistration: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
-EWalletSchema.index(
-  { user: 1, methodId: 1, walletNumber: 1 },
-  { unique: true },
-);
+EWalletSchema.index({ user: 1, walletNumber: 1 }, { unique: true });
 EWalletSchema.index({ user: 1, isDefault: 1 });
 
 const EWallet =

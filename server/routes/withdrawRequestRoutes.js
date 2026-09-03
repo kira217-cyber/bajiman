@@ -7,10 +7,17 @@ import WithdrawMethod from "../models/WithdrawMethod.js";
 import EWallet from "../models/EWallet.js";
 import protectUser from "../middleware/protectUser.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
+import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
+import { checkUserOtp, consumeUserOtp } from "./eWalletRoutes.js";
 
 const router = express.Router();
 
-const getUserIdFromReq = (req) => req.user?.id || req.user?._id || null;
+const clean = (value = "") => String(value || "").trim();
+
+const getUserIdFromReq = (req) => {
+  const id = req.user?.id || req.user?._id || null;
+  return id ? String(id) : null;
+};
 
 const normalizeMethodId = (value) => String(value || "").trim().toUpperCase();
 
@@ -90,6 +97,7 @@ router.post("/withdraw-requests", protectUser, async (req, res) => {
     const methodId = normalizeMethodId(req.body?.methodId);
     const walletId = String(req.body?.walletId || "").trim();
     const amount = Number(req.body?.amount || 0);
+    const otp = clean(req.body?.otp);
 
     if (!methodId) {
       return res.status(400).json({
@@ -186,11 +194,24 @@ router.post("/withdraw-requests", protectUser, async (req, res) => {
       });
     }
 
-    if (String(wallet.methodId || "").toUpperCase() !== methodId) {
-      return res.status(400).json({
-        success: false,
-        message: "Selected wallet does not match the method",
-      });
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (otpSetting.withdrawEnabled) {
+      if (!otp) {
+        return res.status(400).json({
+          success: false,
+          message: "OTP is required",
+        });
+      }
+
+      const otpResult = checkUserOtp(userId, otp);
+
+      if (!otpResult.ok) {
+        return res.status(400).json({
+          success: false,
+          message: otpResult.message,
+        });
+      }
     }
 
     const user = await User.findById(userId);
@@ -244,6 +265,10 @@ router.post("/withdraw-requests", protectUser, async (req, res) => {
       { _id: user._id },
       { $set: { balance: balanceAfter } },
     );
+
+    if (otpSetting.withdrawEnabled) {
+      consumeUserOtp(userId);
+    }
 
     return res.json({
       success: true,

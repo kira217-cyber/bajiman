@@ -113,6 +113,9 @@ const PersonalInfoModal = ({ open, onClose, onUpdated }) => {
     usernameNote: isBangla
       ? "ইউজারনেম পরিবর্তন করা যাবে না"
       : "Username cannot be changed",
+    phoneNote: isBangla
+      ? "রেজিস্ট্রেশন নাম্বার পরিবর্তন করা যাবে না"
+      : "Registration phone number cannot be changed",
     countryCode: isBangla ? "দেশের কোড" : "Country Code",
     phone: isBangla ? "ফোন নাম্বার" : "Phone Number",
     email: isBangla ? "ইমেইল" : "Email",
@@ -176,17 +179,10 @@ const PersonalInfoModal = ({ open, onClose, onUpdated }) => {
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
 
-    if (!form.countryCode.trim() || !form.phone.trim()) {
-      toast.error(t.required);
-      return;
-    }
-
     try {
       setSaving(true);
 
       const payload = {
-        countryCode: form.countryCode.trim(),
-        phone: form.phone.trim(),
         email: form.email.trim(),
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -326,9 +322,8 @@ const PersonalInfoModal = ({ open, onClose, onUpdated }) => {
                       <InputField
                         label={t.countryCode}
                         value={form.countryCode}
-                        onChange={(e) =>
-                          setField("countryCode", e.target.value)
-                        }
+                        onChange={() => {}}
+                        disabled
                         icon={<Phone size={17} />}
                         placeholder="+880"
                         colors={colors}
@@ -337,18 +332,21 @@ const PersonalInfoModal = ({ open, onClose, onUpdated }) => {
                       <InputField
                         label={t.phone}
                         value={form.phone}
-                        onChange={(e) =>
-                          setField(
-                            "phone",
-                            e.target.value.replace(/[^\d]/g, ""),
-                          )
-                        }
+                        onChange={() => {}}
+                        disabled
                         icon={<Phone size={17} />}
                         placeholder="1XXXXXXXXX"
                         type="tel"
                         colors={colors}
                       />
                     </div>
+
+                    <p
+                      className="mt-2 text-[12px] font-medium"
+                      style={{ color: colors.mutedText }}
+                    >
+                      {t.phoneNote}
+                    </p>
                   </div>
 
                   <div
