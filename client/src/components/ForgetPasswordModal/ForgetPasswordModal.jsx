@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Eye, EyeOff, Search, X } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Lock, Search, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { useSelector } from "react-redux";
 
 import { useLanguage } from "../../Context/LanguageProvider";
 import api from "../../api/axios";
 import { selectForgetPasswordModalSetting } from "../../features/global/globalSelectors";
+import SuccessConfirmModal from "../SuccessConfirmModal/SuccessConfirmModal";
+import useOtpSetting from "../../hook/useOtpSetting";
 
 const fallbackLogoUrl =
   "https://img.c88rx.com/cx/h5/assets/images/member-logo.png?v=1780386038573";
@@ -88,6 +90,7 @@ const ForgetPasswordModal = ({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [showResetSuccess, setShowResetSuccess] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -107,6 +110,9 @@ const ForgetPasswordModal = ({
 
   const isBangladeshSelected =
     selected?.cca2 === "BD" || selected?.code === "+880";
+
+  const { forgotPasswordEnabled: forgotPasswordOtpEnabled } = useOtpSetting();
+  const otpRequired = isBangladeshSelected && forgotPasswordOtpEnabled;
 
   const text = useMemo(
     () => ({
@@ -161,6 +167,13 @@ const ForgetPasswordModal = ({
       success: isBangla
         ? "পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে"
         : "Password reset successful",
+      resetSuccessTitle: isBangla
+        ? "আপনার পাসওয়ার্ড রিসেট হয়েছে!"
+        : "Your password has been reset!",
+      resetSuccessDesc: isBangla
+        ? "অনুগ্রহ করে আপনার নতুন পাসওয়ার্ড দিয়ে লগইন করুন।"
+        : "Please login with your new password.",
+      goToLogin: isBangla ? "লগ ইন" : "Log In",
     }),
     [isBangla],
   );
@@ -264,10 +277,10 @@ const ForgetPasswordModal = ({
   }, [open]);
 
   useEffect(() => {
-    if (!isBangladeshSelected) {
+    if (!otpRequired) {
       resetOtp();
     }
-  }, [isBangladeshSelected]);
+  }, [otpRequired]);
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -332,7 +345,7 @@ const ForgetPasswordModal = ({
   };
 
   const handleSendOtp = async () => {
-    if (!isBangladeshSelected) return;
+    if (!otpRequired) return;
     if (!validatePhone()) return;
 
     try {
@@ -375,7 +388,7 @@ const ForgetPasswordModal = ({
   const handleVerifyOtp = async () => {
     if (!validatePhone()) return;
 
-    if (!isBangladeshSelected) {
+    if (!otpRequired) {
       setOtpVerified(true);
       setStep(2);
       return;
@@ -423,7 +436,7 @@ const ForgetPasswordModal = ({
   };
 
   const handleResetPassword = async () => {
-    if (isBangladeshSelected && !otpVerified) {
+    if (otpRequired && !otpVerified) {
       toast.error(isBangla ? "আগে OTP যাচাই করুন" : "Please verify OTP first");
       setStep(1);
       return;
@@ -457,7 +470,7 @@ const ForgetPasswordModal = ({
         {
           countryCode: selected.code,
           phone: finalSubmitPhone,
-          otp: isBangladeshSelected ? otpInput.trim() : "",
+          otp: otpRequired ? otpInput.trim() : "",
           password: newPassword,
           confirmPassword,
         },
@@ -468,13 +481,7 @@ const ForgetPasswordModal = ({
       }
 
       toast.success(data?.message || text.success);
-      resetForm();
-
-      if (onLoginClick) {
-        onLoginClick();
-      } else {
-        onClose?.();
-      }
+      setShowResetSuccess(true);
     } catch (error) {
       toast.error(
         error?.response?.data?.message ||
@@ -486,6 +493,17 @@ const ForgetPasswordModal = ({
     }
   };
 
+  const handleResetSuccessDone = () => {
+    setShowResetSuccess(false);
+    resetForm();
+
+    if (onLoginClick) {
+      onLoginClick();
+    } else {
+      onClose?.();
+    }
+  };
+
   const inputStyle = {
     backgroundColor: setting.inputBg,
     color: setting.inputText,
@@ -494,12 +512,13 @@ const ForgetPasswordModal = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center px-0 backdrop-blur-[3px] sm:px-4"
-          style={{ background: setting.overlayBg }}
-        >
+    <>
+      <AnimatePresence>
+        {open && (
+          <div
+            className="fixed inset-0 z-[99999] flex items-center justify-center px-0 backdrop-blur-[3px] sm:px-4"
+            style={{ background: setting.overlayBg }}
+          >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -697,7 +716,7 @@ const ForgetPasswordModal = ({
                     </div>
                   </div>
 
-                  {isBangladeshSelected && (
+                  {otpRequired && (
                     <div className="mt-5">
                       <label
                         className="mb-3 block text-[14px]"
@@ -757,7 +776,7 @@ const ForgetPasswordModal = ({
                   >
                     {otpVerifying
                       ? text.verifying
-                      : isBangladeshSelected
+                      : otpRequired
                         ? text.verifyOtp
                         : text.next}
                   </button>
@@ -906,8 +925,26 @@ const ForgetPasswordModal = ({
             `}</style>
           </motion.div>
         </div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+
+      <SuccessConfirmModal
+        open={showResetSuccess}
+        icon={Lock}
+        title={text.resetSuccessTitle}
+        description={text.resetSuccessDesc}
+        buttonText={text.goToLogin}
+        onButtonClick={handleResetSuccessDone}
+        colors={{
+          successBg: setting.buttonBg,
+          successText: setting.buttonText,
+          modalBg: setting.modalBg,
+          primaryBg: setting.buttonBg,
+          primaryText: setting.buttonText,
+          mutedText: setting.footerText,
+        }}
+      />
+    </>
   );
 };
 

@@ -2,6 +2,7 @@ import express from "express";
 import axios from "axios";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
 
 const router = express.Router();
 
@@ -10,6 +11,12 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 
 const forgotOtpStore = new Map();
 const registerOtpStore = new Map();
+
+// Admin manages the SMS api key + per-flow on/off toggles from the admin
+// panel now, instead of only a fixed env var. The env var is kept as a
+// fallback so nothing breaks before an admin sets a key via the UI.
+const getApiKey = (setting) =>
+  (setting?.apiKey || "").trim() || process.env.OTP_API_KEY || "";
 
 const clean = (value = "") => String(value || "").trim();
 
@@ -100,7 +107,18 @@ router.post("/register/send-otp", async (req, res) => {
       });
     }
 
-    if (!process.env.OTP_API_KEY) {
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (!otpSetting.registerEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP is disabled for registration",
+      });
+    }
+
+    const apiKey = getApiKey(otpSetting);
+
+    if (!apiKey) {
       return res
         .status(500)
         .json({ success: false, message: "OTP API key is missing" });
@@ -128,7 +146,7 @@ router.post("/register/send-otp", async (req, res) => {
       { phoneNumber: buildSmsPhoneNumber(cc, phone) },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OTP_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
       },
@@ -239,7 +257,18 @@ router.post("/send-otp", async (req, res) => {
       });
     }
 
-    if (!process.env.OTP_API_KEY) {
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (!otpSetting.forgotPasswordEnabled) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP is disabled for forgot password",
+      });
+    }
+
+    const apiKey = getApiKey(otpSetting);
+
+    if (!apiKey) {
       return res
         .status(500)
         .json({ success: false, message: "OTP API key is missing" });
@@ -267,7 +296,7 @@ router.post("/send-otp", async (req, res) => {
       { phoneNumber: buildSmsPhoneNumber(cc, phone) },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OTP_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
       },
@@ -384,7 +413,9 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    if (cc === "+880") {
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (cc === "+880" && otpSetting.forgotPasswordEnabled) {
       const key = getOtpKey(cc, phone);
       const savedOtp = forgotOtpStore.get(key);
 

@@ -18,6 +18,7 @@ import { toast } from "react-toastify";
 import api from "../../api/axios";
 import { setCredentials } from "../../features/auth/authSlice";
 import { selectRegisterModalSetting } from "../../features/global/globalSelectors";
+import useOtpSetting from "../../hook/useOtpSetting";
 
 import slide1 from "../../assets/register/1.jpg";
 import slide2 from "../../assets/register/2.jpg";
@@ -159,6 +160,9 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
 
   const isBangladeshSelected =
     selected?.cca2 === "BD" || selected?.code === "+880";
+
+  const { registerEnabled: registerOtpEnabled } = useOtpSetting();
+  const otpRequired = isBangladeshSelected && registerOtpEnabled;
 
   const text = {
     title: isBangla ? "সাইন আপ" : "Sign up",
@@ -316,10 +320,10 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
   }, [open]);
 
   useEffect(() => {
-    if (!isBangladeshSelected) {
+    if (!otpRequired) {
       resetOtp();
     }
-  }, [isBangladeshSelected]);
+  }, [otpRequired]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -394,10 +398,10 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     /^[a-z0-9]+$/.test(cleanUsername) &&
     passwordValid &&
     cleanPhone.length >= 6 &&
-    (!isBangladeshSelected || otpInput.trim().length > 0);
+    (!otpRequired || otpInput.trim().length > 0);
 
   const handleSendOtp = async () => {
-    if (!isBangladeshSelected) return;
+    if (!otpRequired) return;
 
     if (!cleanPhone) {
       setErrors((prev) => ({ ...prev, phone: text.enterPhone }));
@@ -524,7 +528,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
       newErrors.phone = text.phoneLength;
     }
 
-    if (isBangladeshSelected) {
+    if (otpRequired) {
       if (!otpExpiresAt || Date.now() > otpExpiresAt) {
         newErrors.otp = text.otpExpired;
       } else if (!otpInput.trim()) {
@@ -549,7 +553,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     if (!validateForm()) return;
 
     try {
-      if (isBangladeshSelected) {
+      if (otpRequired) {
         await verifyRegisterOtp();
       }
 
@@ -560,7 +564,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
         countryCode: selected.code,
         phone: finalSubmitPhone,
         referCode: refCode.trim().toUpperCase(),
-        otp: isBangladeshSelected ? otpInput.trim() : "",
+        otp: otpRequired ? otpInput.trim() : "",
       });
     } catch (error) {
       setErrors((prev) => ({
@@ -952,7 +956,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
                   )}
                 </div>
 
-                {isBangladeshSelected && (
+                {otpRequired && (
                   <div className="mt-5">
                     <label
                       className="mb-3 block text-[14px]"

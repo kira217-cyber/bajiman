@@ -10,6 +10,7 @@ import {
   isRegisterOtpVerified,
   clearRegisterOtp,
 } from "./forgotPasswordRoutes.js";
+import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
 
 const router = express.Router();
 
@@ -186,7 +187,9 @@ router.post("/register", async (req, res) => {
       return errorResponse(res, "Phone number already registered", 409);
     }
 
-    if (finalCountryCode === "+880") {
+    const otpSetting = await getOrCreateOtpSetting();
+
+    if (finalCountryCode === "+880" && otpSetting.registerEnabled) {
       const otpOk = isRegisterOtpVerified({
         countryCode: finalCountryCode,
         phone: finalPhone,
