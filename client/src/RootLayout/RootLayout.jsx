@@ -61,7 +61,9 @@ const RootLayout = () => {
           desktopSidebarOpen ? "lg:pl-[250px]" : ""
         }`}
       >
-        <DownloadAppBanner />
+        <div className="block md:hidden">
+          <DownloadAppBanner />
+        </div>
         <Outlet />
       </main>
       <Footer desktopOpen={desktopSidebarOpen} />

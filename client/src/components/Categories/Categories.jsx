@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useLanguage } from "../../Context/LanguageProvider";
 import HotsGame from "../HotsGame/HotsGame";
@@ -110,8 +110,74 @@ const Categories = () => {
 
   const activeCategory = categories.find((item) => item.key === activeKey);
 
+  // Once the section scrolls up under the fixed navbar (mobile only), swap
+  // in a compact, name-only bar pinned to the viewport (position: fixed,
+  // not sticky) so it stays visible for the rest of the scroll — including
+  // past the footer, since a sticky element would stop once its parent
+  // container's bottom edge scrolls by.
+  const sentinelRef = useRef(null);
+  const [isStuck, setIsStuck] = useState(false);
+
+  useEffect(() => {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+
+      requestAnimationFrame(() => {
+        if (sentinelRef.current) {
+          setIsStuck(sentinelRef.current.getBoundingClientRect().top <= 56);
+        }
+        ticking = false;
+      });
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
     <>
+      <div ref={sentinelRef} />
+
+      {isStuck && !showSkeleton && (
+        <div
+          className="fixed left-0 right-0 top-[56px] z-20 lg:hidden"
+          style={{ backgroundColor: setting.navBg }}
+        >
+          <div className="no-scrollbar flex overflow-x-auto">
+            {categories.map((item) => {
+              const isActive = activeKey === item.key;
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setActiveKey(item.key)}
+                  className="relative shrink-0 cursor-pointer whitespace-nowrap px-4 py-3 text-[12px] font-bold uppercase tracking-wide transition-colors"
+                  style={{ color: setting.itemTextColor }}
+                >
+                  {isBangla ? item.name.bn : item.name.en}
+
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-1/2 h-0 w-0 -translate-x-1/2"
+                      style={{
+                        borderLeft: "9px solid transparent",
+                        borderRight: "9px solid transparent",
+                        borderBottom: `10px solid ${setting.activeBorderColor}`,
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <section
         className="w-full md:bg-transparent"
         style={{ backgroundColor: setting.sectionBg }}
@@ -169,8 +235,12 @@ const Categories = () => {
 
                     {isActive && (
                       <span
-                        className="absolute bottom-0 left-0 h-[3px] w-full"
-                        style={{ backgroundColor: setting.activeBorderColor }}
+                        className="absolute bottom-0 left-1/2 h-0 w-0 -translate-x-1/2"
+                        style={{
+                          borderLeft: "10px solid transparent",
+                          borderRight: "10px solid transparent",
+                          borderBottom: `11px solid ${setting.activeBorderColor}`,
+                        }}
                       />
                     )}
                   </button>

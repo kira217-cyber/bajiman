@@ -14,6 +14,7 @@ import {
   ReceiptText,
   UserRound,
   LockKeyhole,
+  Download,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useDispatch, useSelector } from "react-redux";
@@ -742,24 +743,39 @@ const Navber = ({ setOpen, desktopOpen }) => {
             )}
           </div>
 
-          {pageLoading ? (
-            <div className="h-[34px] w-[34px] animate-pulse rounded-full bg-white/25 lg:hidden" />
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                closeAllModals();
-                setOpenLangModal(true);
-              }}
-              className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center overflow-hidden rounded-full transition hover:scale-105 lg:hidden"
+          <div className="flex items-center gap-2 lg:hidden">
+            <a
+              href="https://apps.bajiman.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex cursor-pointer flex-col items-center justify-center gap-[1px]"
+              style={{ color: colors.mobileMenuIconColor }}
             >
-              <img
-                src={language === "Bangla" ? flagUrl.Bangla : flagUrl.English}
-                alt={language}
-                className="h-[26px] w-[26px] rounded-full object-cover"
-              />
-            </button>
-          )}
+              <Download size={19} />
+              <span className="text-[9px] font-semibold leading-none">
+                {isBangla ? "অ্যাপ" : "App"}
+              </span>
+            </a>
+
+            {pageLoading ? (
+              <div className="h-[34px] w-[34px] animate-pulse rounded-full bg-white/25" />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  closeAllModals();
+                  setOpenLangModal(true);
+                }}
+                className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center overflow-hidden rounded-full transition hover:scale-105"
+              >
+                <img
+                  src={language === "Bangla" ? flagUrl.Bangla : flagUrl.English}
+                  alt={language}
+                  className="h-[26px] w-[26px] rounded-full object-cover"
+                />
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
