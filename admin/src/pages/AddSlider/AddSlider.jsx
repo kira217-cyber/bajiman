@@ -5,6 +5,7 @@ import {
   Edit,
   ImagePlus,
   Loader2,
+  Plus,
   PlusCircle,
   RefreshCw,
   RotateCcw,
@@ -37,7 +38,30 @@ const emptyForm = {
   mobileImage: null,
   order: "",
   status: "active",
+
+  mode: "link",
+  link: "",
+  promoImage: null,
+  promoTitleBn: "",
+  promoTitleEn: "",
+  promoDescriptionBn: "",
+  promoDescriptionEn: "",
+
+  promoTableEnabled: false,
+  promoTableCol1LabelBn: "",
+  promoTableCol1LabelEn: "",
+  promoTableCol2LabelBn: "",
+  promoTableCol2LabelEn: "",
+  promoTableRows: [],
+
   ...defaultColors,
+};
+
+const emptyPromoTableRow = {
+  col1Bn: "",
+  col1En: "",
+  col2Bn: "",
+  col2En: "",
 };
 
 const colorFields = [
@@ -71,6 +95,28 @@ const normalizeSliderToForm = (slider = null) => ({
   order: slider?.order ? String(slider.order) : "",
   status: slider?.status || "active",
 
+  mode: slider?.mode === "promo" ? "promo" : "link",
+  link: slider?.link || "",
+  promoImage: null,
+  promoTitleBn: slider?.promoTitle?.bn || "",
+  promoTitleEn: slider?.promoTitle?.en || "",
+  promoDescriptionBn: slider?.promoDescription?.bn || "",
+  promoDescriptionEn: slider?.promoDescription?.en || "",
+
+  promoTableEnabled: Boolean(slider?.promoTable?.enabled),
+  promoTableCol1LabelBn: slider?.promoTable?.col1Label?.bn || "",
+  promoTableCol1LabelEn: slider?.promoTable?.col1Label?.en || "",
+  promoTableCol2LabelBn: slider?.promoTable?.col2Label?.bn || "",
+  promoTableCol2LabelEn: slider?.promoTable?.col2Label?.en || "",
+  promoTableRows: Array.isArray(slider?.promoTable?.rows)
+    ? slider.promoTable.rows.map((row) => ({
+        col1Bn: row?.col1?.bn || "",
+        col1En: row?.col1?.en || "",
+        col2Bn: row?.col2?.bn || "",
+        col2En: row?.col2?.en || "",
+      }))
+    : [],
+
   sectionBg: slider?.sectionBg || defaultColors.sectionBg,
   desktopSectionBg: slider?.desktopSectionBg || defaultColors.desktopSectionBg,
   slideBg: slider?.slideBg || defaultColors.slideBg,
@@ -97,10 +143,34 @@ const AddSlider = () => {
 
   const [desktopPreview, setDesktopPreview] = useState("");
   const [mobilePreview, setMobilePreview] = useState("");
+  const [promoPreview, setPromoPreview] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
   const setValue = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const addPromoTableRow = () => {
+    setForm((prev) => ({
+      ...prev,
+      promoTableRows: [...prev.promoTableRows, { ...emptyPromoTableRow }],
+    }));
+  };
+
+  const removePromoTableRow = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      promoTableRows: prev.promoTableRows.filter((_, i) => i !== index),
+    }));
+  };
+
+  const setPromoTableRowValue = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      promoTableRows: prev.promoTableRows.map((row, i) =>
+        i === index ? { ...row, [key]: value } : row,
+      ),
+    }));
   };
 
   const loadSliders = async () => {
@@ -167,11 +237,32 @@ const AddSlider = () => {
     setMobilePreview("");
   }, [form.mobileImage, editing]);
 
+  useEffect(() => {
+    if (form.promoImage instanceof File) {
+      const url = URL.createObjectURL(form.promoImage);
+      setPromoPreview(url);
+      return () => URL.revokeObjectURL(url);
+    }
+
+    if (editing?.promoImageUrl) {
+      setPromoPreview(editing.promoImageUrl);
+      return;
+    }
+
+    if (editing?.promoImage) {
+      setPromoPreview(fileUrl(editing.promoImage));
+      return;
+    }
+
+    setPromoPreview("");
+  }, [form.promoImage, editing]);
+
   const resetForm = () => {
     setEditing(null);
     setForm(emptyForm);
     setDesktopPreview("");
     setMobilePreview("");
+    setPromoPreview("");
   };
 
   const startEdit = (slider) => {
@@ -197,6 +288,24 @@ const AddSlider = () => {
       return toast.error("Mobile slider image is required");
     }
 
+    if (form.mode === "link" && !form.link.trim()) {
+      return toast.error("Link is required in link mode");
+    }
+
+    if (form.mode === "promo") {
+      const hasPromoImage =
+        form.promoImage instanceof File ||
+        (editing && (editing.promoImageUrl || editing.promoImage));
+
+      if (!hasPromoImage) {
+        return toast.error("Promo image is required in promo mode");
+      }
+
+      if (!form.promoTitleBn.trim() && !form.promoTitleEn.trim()) {
+        return toast.error("Promo title is required in promo mode");
+      }
+    }
+
     try {
       setLoading(true);
 
@@ -204,6 +313,30 @@ const AddSlider = () => {
 
       fd.append("order", String(form.order || "0"));
       fd.append("status", form.status);
+      fd.append("mode", form.mode);
+      fd.append("link", form.link);
+      fd.append("promoTitleBn", form.promoTitleBn);
+      fd.append("promoTitleEn", form.promoTitleEn);
+      fd.append("promoDescriptionBn", form.promoDescriptionBn);
+      fd.append("promoDescriptionEn", form.promoDescriptionEn);
+      fd.append(
+        "promoTable",
+        JSON.stringify({
+          enabled: form.promoTableEnabled,
+          col1Label: {
+            bn: form.promoTableCol1LabelBn,
+            en: form.promoTableCol1LabelEn,
+          },
+          col2Label: {
+            bn: form.promoTableCol2LabelBn,
+            en: form.promoTableCol2LabelEn,
+          },
+          rows: form.promoTableRows.map((row) => ({
+            col1: { bn: row.col1Bn, en: row.col1En },
+            col2: { bn: row.col2Bn, en: row.col2En },
+          })),
+        }),
+      );
       appendColors(fd);
 
       if (form.desktopImage instanceof File) {
@@ -212,6 +345,10 @@ const AddSlider = () => {
 
       if (form.mobileImage instanceof File) {
         fd.append("mobileImage", form.mobileImage);
+      }
+
+      if (form.promoImage instanceof File) {
+        fd.append("promoImage", form.promoImage);
       }
 
       if (editing?._id) {
@@ -395,6 +532,325 @@ const AddSlider = () => {
           </section>
 
           <section className="rounded-3xl border border-[#1A79D3]/20 bg-black/35 p-5 shadow-2xl md:p-6">
+            <div className="mb-5">
+              <h2 className="text-xl font-black">Click Action</h2>
+              <p className="text-sm text-slate-400">
+                Slide-এ ক্লিক করলে কী হবে সেটা এখানে ঠিক করো।
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Mode</label>
+              <select
+                value={form.mode}
+                onChange={(e) => setValue("mode", e.target.value)}
+                className={`${inputClass} cursor-pointer`}
+              >
+                <option className="bg-[#050607]" value="link">
+                  Link (নতুন ট্যাবে খুলবে)
+                </option>
+                <option className="bg-[#050607]" value="promo">
+                  Promo Modal (ছবি + টাইটেল + বিবরণ দেখাবে)
+                </option>
+              </select>
+            </div>
+
+            {form.mode === "link" ? (
+              <div className="mt-5">
+                <label className={labelClass}>Link URL</label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={form.link}
+                  onChange={(e) => setValue("link", e.target.value)}
+                  placeholder="https://example.com"
+                />
+              </div>
+            ) : (
+              <div className="mt-5 space-y-5">
+                <div>
+                  <label className={labelClass}>Promo Banner Image</label>
+                  <p className="mb-2 text-xs text-slate-400">
+                    প্রস্তাবিত সাইজ: 1200 x 500px (অনুপাত ~2.4:1), landscape
+                    ব্যানার ইমেজ
+                  </p>
+                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#1A79D3]/40 bg-black/40 p-4 text-center transition hover:border-[#3ea0ff] hover:bg-[#1A79D3]/10">
+                    {promoPreview ? (
+                      <img
+                        src={promoPreview}
+                        alt="Promo Preview"
+                        className="aspect-video w-full rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="flex aspect-video w-full flex-col items-center justify-center rounded-xl bg-black/30">
+                        <ImagePlus className="mb-3 h-10 w-10 text-[#3ea0ff]" />
+                        <p className="text-sm font-black text-slate-100">
+                          Click to upload promo image
+                        </p>
+                      </div>
+                    )}
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) =>
+                        setValue("promoImage", e.target.files?.[0] || null)
+                      }
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={labelClass}>Promo Title (BN)</label>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={form.promoTitleBn}
+                      onChange={(e) =>
+                        setValue("promoTitleBn", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Promo Title (EN)</label>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={form.promoTitleEn}
+                      onChange={(e) =>
+                        setValue("promoTitleEn", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs text-slate-400">
+                    লেখার নিয়ম: যে লাইনের শেষে ":" থাকবে সেটা বোল্ড হেডিং হয়ে
+                    যাবে (যেমন "How to Participate:"), যে লাইন "- " দিয়ে শুরু
+                    হবে সেটা বুলেট পয়েন্ট হবে, খালি লাইন দিলে একটু গ্যাপ হবে।
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={labelClass}>
+                      Promo Description (BN)
+                    </label>
+                    <textarea
+                      rows={3}
+                      className={inputClass}
+                      value={form.promoDescriptionBn}
+                      onChange={(e) =>
+                        setValue("promoDescriptionBn", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>
+                      Promo Description (EN)
+                    </label>
+                    <textarea
+                      rows={3}
+                      className={inputClass}
+                      value={form.promoDescriptionEn}
+                      onChange={(e) =>
+                        setValue("promoDescriptionEn", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[#1A79D3]/20 bg-black/30 p-4">
+                  <label className="flex cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form.promoTableEnabled}
+                      onChange={(e) =>
+                        setValue("promoTableEnabled", e.target.checked)
+                      }
+                      className="h-4 w-4 cursor-pointer accent-[#3ea0ff]"
+                    />
+                    <span className="text-sm font-black text-blue-100">
+                      Event Details Table (যেমন Frequency / Prizes)
+                    </span>
+                  </label>
+
+                  {form.promoTableEnabled && (
+                    <div className="mt-4 space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label className={labelClass}>
+                            Column 1 Label (BN)
+                          </label>
+                          <input
+                            type="text"
+                            className={inputClass}
+                            value={form.promoTableCol1LabelBn}
+                            onChange={(e) =>
+                              setValue(
+                                "promoTableCol1LabelBn",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="যেমন: ফ্রিকোয়েন্সি"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelClass}>
+                            Column 1 Label (EN)
+                          </label>
+                          <input
+                            type="text"
+                            className={inputClass}
+                            value={form.promoTableCol1LabelEn}
+                            onChange={(e) =>
+                              setValue(
+                                "promoTableCol1LabelEn",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="e.g. Frequency"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelClass}>
+                            Column 2 Label (BN)
+                          </label>
+                          <input
+                            type="text"
+                            className={inputClass}
+                            value={form.promoTableCol2LabelBn}
+                            onChange={(e) =>
+                              setValue(
+                                "promoTableCol2LabelBn",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="যেমন: পুরস্কার"
+                          />
+                        </div>
+
+                        <div>
+                          <label className={labelClass}>
+                            Column 2 Label (EN)
+                          </label>
+                          <input
+                            type="text"
+                            className={inputClass}
+                            value={form.promoTableCol2LabelEn}
+                            onChange={(e) =>
+                              setValue(
+                                "promoTableCol2LabelEn",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="e.g. Prizes"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {form.promoTableRows.map((row, index) => (
+                          <div
+                            key={index}
+                            className="rounded-xl border border-[#1A79D3]/20 bg-black/40 p-3"
+                          >
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-xs font-black text-slate-400">
+                                Row {index + 1}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => removePromoTableRow(index)}
+                                className="flex cursor-pointer items-center gap-1 rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-200 hover:bg-red-500/20"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Remove
+                              </button>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <input
+                                type="text"
+                                className={inputClass}
+                                value={row.col1Bn}
+                                onChange={(e) =>
+                                  setPromoTableRowValue(
+                                    index,
+                                    "col1Bn",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Column 1 (BN)"
+                              />
+                              <input
+                                type="text"
+                                className={inputClass}
+                                value={row.col1En}
+                                onChange={(e) =>
+                                  setPromoTableRowValue(
+                                    index,
+                                    "col1En",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Column 1 (EN)"
+                              />
+                              <input
+                                type="text"
+                                className={inputClass}
+                                value={row.col2Bn}
+                                onChange={(e) =>
+                                  setPromoTableRowValue(
+                                    index,
+                                    "col2Bn",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Column 2 (BN)"
+                              />
+                              <input
+                                type="text"
+                                className={inputClass}
+                                value={row.col2En}
+                                onChange={(e) =>
+                                  setPromoTableRowValue(
+                                    index,
+                                    "col2En",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Column 2 (EN)"
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={addPromoTableRow}
+                          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#1A79D3]/40 bg-[#1A79D3]/10 px-4 py-2.5 text-sm font-black text-blue-100 hover:bg-[#1A79D3]/20"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add Row
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-[#1A79D3]/20 bg-black/35 p-5 shadow-2xl md:p-6">
             <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
               <div>
                 <h2 className="text-xl font-black">Slider Color Control</h2>
@@ -571,6 +1027,10 @@ const AddSlider = () => {
                       }`}
                     >
                       {slider.status?.toUpperCase()}
+                    </span>
+
+                    <span className="rounded-lg bg-purple-500 px-3 py-1 text-xs font-black text-white">
+                      {slider.mode === "promo" ? "PROMO" : "LINK"}
                     </span>
                   </div>
 

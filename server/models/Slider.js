@@ -93,6 +93,71 @@ const SliderSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
+
+    // Click behavior: "link" opens `link` in a new tab; "promo" opens an
+    // in-app modal showing promoImage/promoTitle/promoDescription instead.
+    mode: {
+      type: String,
+      enum: ["link", "promo"],
+      default: "link",
+    },
+
+    link: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    promoImage: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    promoTitle: {
+      bn: { type: String, default: "", trim: true },
+      en: { type: String, default: "", trim: true },
+    },
+
+    // Rich body text — rendered with a light markup convention so admin
+    // can reproduce a "Weekly Lucky Draw"-style layout without a rigid
+    // schema: a line ending with ":" becomes a bold sub-header (e.g. "How
+    // to Participate:"), a line starting with "- " becomes a bullet point,
+    // a blank line adds spacing, anything else is a plain paragraph.
+    promoDescription: {
+      bn: { type: String, default: "", trim: true },
+      en: { type: String, default: "", trim: true },
+    },
+
+    // Optional structured 2-column table (e.g. "Event Details":
+    // Frequency / Prizes) rendered below the body text.
+    promoTable: {
+      enabled: { type: Boolean, default: false },
+
+      col1Label: {
+        bn: { type: String, default: "", trim: true },
+        en: { type: String, default: "", trim: true },
+      },
+
+      col2Label: {
+        bn: { type: String, default: "", trim: true },
+        en: { type: String, default: "", trim: true },
+      },
+
+      rows: [
+        {
+          _id: false,
+          col1: {
+            bn: { type: String, default: "", trim: true },
+            en: { type: String, default: "", trim: true },
+          },
+          col2: {
+            bn: { type: String, default: "", trim: true },
+            en: { type: String, default: "", trim: true },
+          },
+        },
+      ],
+    },
   },
   { timestamps: true },
 );

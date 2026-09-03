@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination, Navigation } from "swiper/modules";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -8,6 +8,8 @@ import "swiper/css";
 import "swiper/css/pagination";
 import "swiper/css/navigation";
 
+import { useLanguage } from "../../Context/LanguageProvider";
+import SliderPromoModal from "../SliderPromoModal/SliderPromoModal";
 import {
   selectSliders,
   selectGlobalLoading,
@@ -41,9 +43,23 @@ const getColor = (slider, key) => {
 };
 
 const Slider = () => {
+  const { isBangla } = useLanguage();
   const sliders = useSelector(selectSliders);
   const loading = useSelector(selectGlobalLoading);
   const loaded = useSelector(selectGlobalLoaded);
+
+  const [activePromo, setActivePromo] = useState(null);
+
+  const handleSlideClick = (slider) => {
+    if (slider?.mode === "promo") {
+      setActivePromo(slider);
+      return;
+    }
+
+    if (slider?.link) {
+      window.open(slider.link, "_blank", "noopener,noreferrer");
+    }
+  };
 
   const showSkeleton = loading || !loaded;
   const hasSliders = Array.isArray(sliders) && sliders.length > 0;
@@ -67,7 +83,24 @@ const Slider = () => {
     skeletonDotActiveBg: getColor(colorSource, "skeletonDotActiveBg"),
   };
 
+  const activePromoTitle = activePromo
+    ? (isBangla ? activePromo.promoTitle?.bn : activePromo.promoTitle?.en) ||
+      activePromo.promoTitle?.en ||
+      activePromo.promoTitle?.bn ||
+      ""
+    : "";
+
+  const activePromoDescription = activePromo
+    ? (isBangla
+        ? activePromo.promoDescription?.bn
+        : activePromo.promoDescription?.en) ||
+      activePromo.promoDescription?.en ||
+      activePromo.promoDescription?.bn ||
+      ""
+    : "";
+
   return (
+    <>
     <section
       className="slider-section w-full overflow-hidden py-4"
       style={{
@@ -146,13 +179,20 @@ const Slider = () => {
                 const mobileSrc =
                   item?.mobileImageUrl || makeImageUrl(item?.mobileImage);
 
+                const clickable =
+                  item?.mode === "promo" ? true : Boolean(item?.link);
+
                 return (
                   <SwiperSlide key={item?._id || index} className="!h-auto">
                     {({ isActive }) => (
                       <div
+                        role={clickable ? "button" : undefined}
+                        tabIndex={clickable ? 0 : undefined}
+                        onClick={() => handleSlideClick(item)}
                         className={`relative w-full overflow-hidden shadow-md transition-all duration-500
-                          h-[130px] rounded-[3px] 
+                          h-[130px] rounded-[3px]
                           md:h-[300px]
+                          ${clickable ? "cursor-pointer" : ""}
                           ${
                             isActive
                               ? "scale-100 opacity-100"
@@ -251,6 +291,18 @@ const Slider = () => {
         }
       `}</style>
     </section>
+
+      <SliderPromoModal
+        open={Boolean(activePromo)}
+        onClose={() => setActivePromo(null)}
+        image={
+          activePromo?.promoImageUrl || makeImageUrl(activePromo?.promoImage)
+        }
+        title={activePromoTitle}
+        description={activePromoDescription}
+        table={activePromo?.promoTable}
+      />
+    </>
   );
 };
 

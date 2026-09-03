@@ -91,13 +91,73 @@ const formatSlider = (req, item) => {
       ? buildFileUrl(req, obj.desktopImage)
       : "",
     mobileImageUrl: obj.mobileImage ? buildFileUrl(req, obj.mobileImage) : "",
+    promoImageUrl: obj.promoImage ? buildFileUrl(req, obj.promoImage) : "",
   };
 };
 
 const uploadFields = upload.fields([
   { name: "desktopImage", maxCount: 1 },
   { name: "mobileImage", maxCount: 1 },
+  { name: "promoImage", maxCount: 1 },
 ]);
+
+const cleanBiText = (value = {}) => ({
+  bn: cleanText(value?.bn),
+  en: cleanText(value?.en),
+});
+
+// promoTable is a nested structure (rows array) — multipart form bodies
+// are flat key/value strings, so the client sends it as one JSON string
+// field and this parses it back, falling back to "disabled/empty" on any
+// malformed input instead of failing the whole request.
+const parsePromoTable = (raw) => {
+  let value;
+
+  try {
+    value = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    value = null;
+  }
+
+  if (!value || typeof value !== "object") {
+    return {
+      enabled: false,
+      col1Label: { bn: "", en: "" },
+      col2Label: { bn: "", en: "" },
+      rows: [],
+    };
+  }
+
+  const rows = Array.isArray(value.rows)
+    ? value.rows
+        .map((row) => ({
+          col1: cleanBiText(row?.col1),
+          col2: cleanBiText(row?.col2),
+        }))
+        .filter((row) => row.col1.bn || row.col1.en || row.col2.bn || row.col2.en)
+    : [];
+
+  return {
+    enabled: Boolean(value.enabled) && rows.length > 0,
+    col1Label: cleanBiText(value.col1Label),
+    col2Label: cleanBiText(value.col2Label),
+    rows,
+  };
+};
+
+const buildPromoPayload = (body = {}) => ({
+  mode: body?.mode === "promo" ? "promo" : "link",
+  link: cleanText(body?.link),
+  promoTitle: {
+    bn: cleanText(body?.promoTitleBn),
+    en: cleanText(body?.promoTitleEn),
+  },
+  promoDescription: {
+    bn: cleanText(body?.promoDescriptionBn),
+    en: cleanText(body?.promoDescriptionEn),
+  },
+  promoTable: parsePromoTable(body?.promoTable),
+});
 
 /* ======================================================
    CREATE SLIDER
@@ -108,25 +168,52 @@ router.post("/", protectAdmin, uploadFields, async (req, res) => {
   try {
     const desktopImageFile = req.files?.desktopImage?.[0];
     const mobileImageFile = req.files?.mobileImage?.[0];
+    const promoImageFile = req.files?.promoImage?.[0];
+
+    const cleanupUploads = () => {
+      if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
+      if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
+      if (promoImageFile) deleteLocalFile(promoImageFile.path);
+    };
 
     const order = Number(req.body?.order || 0);
     const status = req.body?.status === "inactive" ? "inactive" : "active";
+    const promoPayload = buildPromoPayload(req.body);
 
     if (!desktopImageFile) {
-      if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
+      cleanupUploads();
       return errorResponse(res, "Desktop slider image is required", 400);
     }
 
     if (!mobileImageFile) {
-      if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
+      cleanupUploads();
       return errorResponse(res, "Mobile slider image is required", 400);
+    }
+
+    if (promoPayload.mode === "link" && !promoPayload.link) {
+      cleanupUploads();
+      return errorResponse(res, "Link is required in link mode", 400);
+    }
+
+    if (promoPayload.mode === "promo") {
+      if (!promoImageFile) {
+        cleanupUploads();
+        return errorResponse(res, "Promo image is required in promo mode", 400);
+      }
+
+      if (!promoPayload.promoTitle.bn && !promoPayload.promoTitle.en) {
+        cleanupUploads();
+        return errorResponse(res, "Promo title is required in promo mode", 400);
+      }
     }
 
     const slider = await Slider.create({
       desktopImage: filePath(desktopImageFile),
       mobileImage: filePath(mobileImageFile),
+      promoImage: promoImageFile ? filePath(promoImageFile) : "",
       order: Number.isFinite(order) ? order : 0,
       status,
+      ...promoPayload,
       ...buildColorPayload(req.body, defaultColors),
     });
 
@@ -139,9 +226,11 @@ router.post("/", protectAdmin, uploadFields, async (req, res) => {
   } catch (error) {
     const desktopImageFile = req.files?.desktopImage?.[0];
     const mobileImageFile = req.files?.mobileImage?.[0];
+    const promoImageFile = req.files?.promoImage?.[0];
 
     if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
     if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
+    if (promoImageFile) deleteLocalFile(promoImageFile.path);
 
     return errorResponse(res, error.message || "Server error", 500);
   }
@@ -247,42 +336,71 @@ router.get("/:id", protectAdmin, async (req, res) => {
 
 router.put("/:id", protectAdmin, uploadFields, async (req, res) => {
   try {
-    if (!isValidObjectId(req.params.id)) {
+    const cleanupUploads = () => {
       const desktopImageFile = req.files?.desktopImage?.[0];
       const mobileImageFile = req.files?.mobileImage?.[0];
+      const promoImageFile = req.files?.promoImage?.[0];
 
       if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
       if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
+      if (promoImageFile) deleteLocalFile(promoImageFile.path);
+    };
 
+    if (!isValidObjectId(req.params.id)) {
+      cleanupUploads();
       return errorResponse(res, "Invalid slider id", 400);
     }
 
     const slider = await Slider.findById(req.params.id);
 
     if (!slider) {
-      const desktopImageFile = req.files?.desktopImage?.[0];
-      const mobileImageFile = req.files?.mobileImage?.[0];
-
-      if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
-      if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
-
+      cleanupUploads();
       return errorResponse(res, "Slider not found", 404);
     }
 
     const desktopImageFile = req.files?.desktopImage?.[0];
     const mobileImageFile = req.files?.mobileImage?.[0];
+    const promoImageFile = req.files?.promoImage?.[0];
 
     const oldDesktopImage = slider.desktopImage;
     const oldMobileImage = slider.mobileImage;
+    const oldPromoImage = slider.promoImage;
 
     const order = Number(req.body?.order || 0);
     const status = req.body?.status === "inactive" ? "inactive" : "active";
+    const promoPayload = buildPromoPayload(req.body);
 
     const removeDesktopImage = String(req.body?.removeDesktopImage) === "true";
     const removeMobileImage = String(req.body?.removeMobileImage) === "true";
+    const removePromoImage = String(req.body?.removePromoImage) === "true";
+
+    if (promoPayload.mode === "link" && !promoPayload.link) {
+      cleanupUploads();
+      return errorResponse(res, "Link is required in link mode", 400);
+    }
+
+    if (promoPayload.mode === "promo") {
+      const willHavePromoImage =
+        promoImageFile || (slider.promoImage && !removePromoImage);
+
+      if (!willHavePromoImage) {
+        cleanupUploads();
+        return errorResponse(res, "Promo image is required in promo mode", 400);
+      }
+
+      if (!promoPayload.promoTitle.bn && !promoPayload.promoTitle.en) {
+        cleanupUploads();
+        return errorResponse(res, "Promo title is required in promo mode", 400);
+      }
+    }
 
     slider.order = Number.isFinite(order) ? order : 0;
     slider.status = status;
+    slider.mode = promoPayload.mode;
+    slider.link = promoPayload.link;
+    slider.promoTitle = promoPayload.promoTitle;
+    slider.promoDescription = promoPayload.promoDescription;
+    slider.promoTable = promoPayload.promoTable;
 
     const colorPayload = buildColorPayload(req.body, slider);
 
@@ -300,6 +418,12 @@ router.put("/:id", protectAdmin, uploadFields, async (req, res) => {
       slider.mobileImage = filePath(mobileImageFile);
     } else if (removeMobileImage) {
       slider.mobileImage = "";
+    }
+
+    if (promoImageFile) {
+      slider.promoImage = filePath(promoImageFile);
+    } else if (removePromoImage) {
+      slider.promoImage = "";
     }
 
     await slider.save();
@@ -321,6 +445,14 @@ router.put("/:id", protectAdmin, uploadFields, async (req, res) => {
     }
 
     if (
+      promoImageFile &&
+      oldPromoImage &&
+      !String(oldPromoImage).startsWith("http")
+    ) {
+      deleteLocalFile(oldPromoImage);
+    }
+
+    if (
       removeDesktopImage &&
       !desktopImageFile &&
       oldDesktopImage &&
@@ -338,6 +470,15 @@ router.put("/:id", protectAdmin, uploadFields, async (req, res) => {
       deleteLocalFile(oldMobileImage);
     }
 
+    if (
+      removePromoImage &&
+      !promoImageFile &&
+      oldPromoImage &&
+      !String(oldPromoImage).startsWith("http")
+    ) {
+      deleteLocalFile(oldPromoImage);
+    }
+
     return successResponse(
       res,
       "Slider updated successfully",
@@ -346,6 +487,9 @@ router.put("/:id", protectAdmin, uploadFields, async (req, res) => {
   } catch (error) {
     const desktopImageFile = req.files?.desktopImage?.[0];
     const mobileImageFile = req.files?.mobileImage?.[0];
+    const promoImageFile = req.files?.promoImage?.[0];
+
+    if (promoImageFile) deleteLocalFile(promoImageFile.path);
 
     if (desktopImageFile) deleteLocalFile(desktopImageFile.path);
     if (mobileImageFile) deleteLocalFile(mobileImageFile.path);
@@ -413,6 +557,10 @@ router.delete("/:id", protectAdmin, async (req, res) => {
 
     if (slider.mobileImage && !String(slider.mobileImage).startsWith("http")) {
       deleteLocalFile(slider.mobileImage);
+    }
+
+    if (slider.promoImage && !String(slider.promoImage).startsWith("http")) {
+      deleteLocalFile(slider.promoImage);
     }
 
     return successResponse(
