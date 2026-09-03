@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Target,
   TrendingUp,
+  Gamepad2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-toastify";
@@ -16,6 +17,7 @@ import { useSelector } from "react-redux";
 import api from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import { selectTransactionHistoryColorSetting } from "../../features/global/globalSelectors";
+import { selectGameProviders } from "../../features/globalGame/globalGameSelectors";
 
 const defaultHistoryColors = {
   modalBg: "#ffffff",
@@ -102,6 +104,8 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     ...(transactionHistoryColorSetting || {}),
   };
 
+  const gameProviders = useSelector(selectGameProviders);
+
   const [page, setPage] = useState(1);
   const limit = 10;
 
@@ -127,6 +131,12 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     running: isBangla ? "চলমান" : "Running",
     completed: isBangla ? "সম্পন্ন" : "Completed",
     refresh: isBangla ? "রিফ্রেশ" : "Refresh",
+    eligibleTitle: isBangla
+      ? "যেসব প্রোভাইডারের গেম খেললে টার্নওভার পূরণ হবে"
+      : "Providers whose games count toward turnover",
+    eligibleUnrestricted: isBangla
+      ? "এখন যেকোনো প্রোভাইডারের গেম খেললেই টার্নওভার পূরণ হবে"
+      : "Right now, any provider's games count toward turnover",
   };
 
   const queryParams = useMemo(() => {
@@ -147,6 +157,37 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     keepPreviousData: true,
     staleTime: 15000,
   });
+
+  const { data: eligibleRes } = useQuery({
+    queryKey: ["turnover-eligible-providers"],
+    queryFn: async () => {
+      const res = await api.get("/api/turnover-provider-setting/public");
+      return res.data;
+    },
+    staleTime: 60000,
+  });
+
+  const eligibleProviders = useMemo(() => {
+    const list = Array.isArray(eligibleRes?.data?.eligibleProviders)
+      ? eligibleRes.data.eligibleProviders
+      : [];
+
+    return list
+      .map((item) => {
+        const code = String(item?.providerCode || "").toUpperCase();
+        const providerInfo = (
+          Array.isArray(gameProviders) ? gameProviders : []
+        ).find((p) => String(p?.providerCode || "").toUpperCase() === code);
+
+        return {
+          code,
+          percent: Number(item?.percent ?? 100),
+          name: providerInfo?.providerName || code,
+          iconUrl: providerInfo?.providerIconUrl || "",
+        };
+      })
+      .filter((item) => item.code);
+  }, [eligibleRes, gameProviders]);
 
   const rows = Array.isArray(data?.data) ? data.data : [];
   const meta = data?.meta || {};
@@ -224,6 +265,71 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
               />
             </button>
           </div>
+        </div>
+      </div>
+
+      <div
+        className="shrink-0 px-4 pb-3"
+        style={{ backgroundColor: colors.sectionBg }}
+      >
+        <div
+          className="rounded-[6px] border p-3 shadow-sm"
+          style={{
+            backgroundColor: colors.cardBg,
+            borderColor: colors.cardBorder,
+          }}
+        >
+          <div
+            className="mb-2 flex items-center gap-2 text-[12px] font-bold"
+            style={{ color: colors.summaryText }}
+          >
+            <Gamepad2 size={14} />
+            <span>{t.eligibleTitle}</span>
+          </div>
+
+          {eligibleProviders.length ? (
+            <div className="flex flex-wrap gap-2">
+              {eligibleProviders.map((provider) => (
+                <div
+                  key={provider.code}
+                  className="flex items-center gap-2 rounded-full border px-2 py-1"
+                  style={{
+                    backgroundColor: colors.summaryBg,
+                    borderColor: colors.cardBorder,
+                  }}
+                >
+                  {provider.iconUrl ? (
+                    <img
+                      src={provider.iconUrl}
+                      alt={provider.name}
+                      className="h-5 w-5 shrink-0 rounded object-contain"
+                    />
+                  ) : null}
+
+                  <span
+                    className="text-[11px] font-bold"
+                    style={{ color: colors.normalText }}
+                  >
+                    {provider.name}
+                  </span>
+
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                    style={{
+                      backgroundColor: colors.progressBg,
+                      color: colors.progressTrackBg,
+                    }}
+                  >
+                    {provider.percent}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[12px]" style={{ color: colors.mutedText }}>
+              {t.eligibleUnrestricted}
+            </p>
+          )}
         </div>
       </div>
 

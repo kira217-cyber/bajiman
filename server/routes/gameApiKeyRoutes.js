@@ -393,6 +393,44 @@ router.get("/client/game-list", async (req, res) => {
   return proxyMasterGet(req, res, "/api/master/cx-global/client/game-list");
 });
 
+/* ADMIN: PROVIDER LIST (live from master, only when the game key is active) */
+router.get("/admin/providers", protectAdmin, async (req, res) => {
+  try {
+    const { setting, error, status } = await getValidSetting();
+
+    if (error) return errorResponse(res, error, status);
+
+    const masterApiBaseUrl = getMasterApiBaseUrl();
+
+    if (!masterApiBaseUrl) {
+      return errorResponse(res, "MASTER_API_URL is missing in .env", 500);
+    }
+
+    const response = await axios.get(
+      `${masterApiBaseUrl}/api/master/cx-global/client/game-data`,
+      {
+        timeout: 30000,
+        headers: {
+          "x-api-key": setting.apiKey,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    const providers = response?.data?.data?.providers || [];
+
+    return successResponse(res, "Providers fetched successfully", providers);
+  } catch (error) {
+    return errorResponse(
+      res,
+      error?.response?.data?.message ||
+        error.message ||
+        "Master API request failed.",
+      error?.response?.status || 500,
+    );
+  }
+});
+
 /* CLIENT PROXY: PLAY GAME DETAILS */
 router.get("/client/play-game/:gameId", async (req, res) => {
   const gameId = encodeURIComponent(req.params.gameId);

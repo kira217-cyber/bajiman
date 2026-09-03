@@ -2,6 +2,9 @@ import express from "express";
 import User from "../models/User.js";
 import TurnOver from "../models/TurnOver.js";
 import GameHistory from "../models/GameHistory.js";
+import Game from "../models/Game.js";
+import GameProvider from "../models/GameProvider.js";
+import TurnoverProviderSetting from "../models/TurnoverProviderSetting.js";
 
 const router = express.Router();
 
@@ -89,6 +92,37 @@ const applyTurnoverProgress = async ({ userId, wagerAmount }) => {
   }
 
   return applied;
+};
+
+/* ----------------------------- TURNOVER PROVIDER PERCENT ----------------------------- */
+// Empty eligible-provider list = no restriction configured yet, so every
+// provider counts at 100% (unchanged behavior until an admin sets this up).
+// Once configured, ONLY listed providers count, each at its own percent —
+// e.g. a provider set to 50 only contributes half of what's wagered on it
+// toward turnover fulfillment.
+const getProviderTurnoverPercent = async (gameUId) => {
+  const setting = await TurnoverProviderSetting.findOne()
+    .select("eligibleProviders")
+    .lean();
+
+  const eligible = setting?.eligibleProviders || [];
+  if (!eligible.length) return 100;
+
+  const game = await Game.findOne({ gameUId }).select("providerDbId").lean();
+  if (!game?.providerDbId) return 0;
+
+  const provider = await GameProvider.findById(game.providerDbId)
+    .select("providerCode")
+    .lean();
+
+  if (!provider?.providerCode) return 0;
+
+  const code = String(provider.providerCode).toUpperCase();
+  const match = eligible.find(
+    (item) => String(item.providerCode).toUpperCase() === code,
+  );
+
+  return match ? Number(match.percent || 0) : 0;
 };
 
 /* ----------------------------- AFFILIATE COMMISSION ----------------------------- */
@@ -278,11 +312,15 @@ router.post("/", async (req, res) => {
 
     const finalBalance = money(updatedPlayer?.balance || 0);
 
+    const turnoverPercent =
+      betAmount > 0 ? await getProviderTurnoverPercent(gameUId) : 0;
+    const turnoverWager = money((betAmount * turnoverPercent) / 100);
+
     const turnoverApplied =
-      betAmount > 0
+      turnoverWager > 0
         ? await applyTurnoverProgress({
             userId: player._id,
-            wagerAmount: betAmount,
+            wagerAmount: turnoverWager,
           })
         : false;
 
