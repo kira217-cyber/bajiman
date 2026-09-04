@@ -48,20 +48,19 @@ const emptyForm = {
   promoDescriptionEn: "",
 
   promoTableEnabled: false,
-  promoTableCol1LabelBn: "",
-  promoTableCol1LabelEn: "",
-  promoTableCol2LabelBn: "",
-  promoTableCol2LabelEn: "",
-  promoTableRows: [],
+  promoTableSections: [],
 
   ...defaultColors,
 };
 
-const emptyPromoTableRow = {
-  col1Bn: "",
-  col1En: "",
-  col2Bn: "",
-  col2En: "",
+// A section is either a multi-column table (columns.length > 0) or a
+// plain list (no columns, one cell per row) — e.g. a deposit bonus's
+// "Eligible Tier" table plus a separate "Eligible Games" list.
+const emptyPromoTableSection = {
+  labelBn: "",
+  labelEn: "",
+  columns: [],
+  rows: [],
 };
 
 const colorFields = [
@@ -104,16 +103,26 @@ const normalizeSliderToForm = (slider = null) => ({
   promoDescriptionEn: slider?.promoDescription?.en || "",
 
   promoTableEnabled: Boolean(slider?.promoTable?.enabled),
-  promoTableCol1LabelBn: slider?.promoTable?.col1Label?.bn || "",
-  promoTableCol1LabelEn: slider?.promoTable?.col1Label?.en || "",
-  promoTableCol2LabelBn: slider?.promoTable?.col2Label?.bn || "",
-  promoTableCol2LabelEn: slider?.promoTable?.col2Label?.en || "",
-  promoTableRows: Array.isArray(slider?.promoTable?.rows)
-    ? slider.promoTable.rows.map((row) => ({
-        col1Bn: row?.col1?.bn || "",
-        col1En: row?.col1?.en || "",
-        col2Bn: row?.col2?.bn || "",
-        col2En: row?.col2?.en || "",
+  promoTableSections: Array.isArray(slider?.promoTable?.sections)
+    ? slider.promoTable.sections.map((section) => ({
+        labelBn: section?.label?.bn || "",
+        labelEn: section?.label?.en || "",
+        columns: Array.isArray(section?.columns)
+          ? section.columns.map((col) => ({
+              bn: col?.bn || "",
+              en: col?.en || "",
+            }))
+          : [],
+        rows: Array.isArray(section?.rows)
+          ? section.rows.map((row) => ({
+              cells: Array.isArray(row?.cells)
+                ? row.cells.map((cell) => ({
+                    bn: cell?.bn || "",
+                    en: cell?.en || "",
+                  }))
+                : [],
+            }))
+          : [],
       }))
     : [],
 
@@ -150,27 +159,113 @@ const AddSlider = () => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const addPromoTableRow = () => {
+  const updateSections = (updater) => {
     setForm((prev) => ({
       ...prev,
-      promoTableRows: [...prev.promoTableRows, { ...emptyPromoTableRow }],
+      promoTableSections: updater(prev.promoTableSections),
     }));
   };
 
-  const removePromoTableRow = (index) => {
-    setForm((prev) => ({
-      ...prev,
-      promoTableRows: prev.promoTableRows.filter((_, i) => i !== index),
-    }));
+  const mapSection = (sections, sectionIndex, mapper) =>
+    sections.map((section, i) => (i === sectionIndex ? mapper(section) : section));
+
+  const addPromoTableSection = () => {
+    updateSections((sections) => [
+      ...sections,
+      { ...emptyPromoTableSection, columns: [], rows: [] },
+    ]);
   };
 
-  const setPromoTableRowValue = (index, key, value) => {
-    setForm((prev) => ({
-      ...prev,
-      promoTableRows: prev.promoTableRows.map((row, i) =>
-        i === index ? { ...row, [key]: value } : row,
-      ),
-    }));
+  const removePromoTableSection = (sectionIndex) => {
+    updateSections((sections) =>
+      sections.filter((_, i) => i !== sectionIndex),
+    );
+  };
+
+  const setPromoTableSectionLabel = (sectionIndex, key, value) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        [key]: value,
+      })),
+    );
+  };
+
+  const addPromoTableColumn = (sectionIndex) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        columns: [...section.columns, { bn: "", en: "" }],
+        rows: section.rows.map((row) => ({
+          cells: [...row.cells, { bn: "", en: "" }],
+        })),
+      })),
+    );
+  };
+
+  const removePromoTableColumn = (sectionIndex, colIndex) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        columns: section.columns.filter((_, i) => i !== colIndex),
+        rows: section.rows.map((row) => ({
+          cells: row.cells.filter((_, i) => i !== colIndex),
+        })),
+      })),
+    );
+  };
+
+  const setPromoTableColumnValue = (sectionIndex, colIndex, key, value) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        columns: section.columns.map((col, i) =>
+          i === colIndex ? { ...col, [key]: value } : col,
+        ),
+      })),
+    );
+  };
+
+  const addPromoTableRow = (sectionIndex) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => {
+        const cellCount = Math.max(1, section.columns.length);
+
+        return {
+          ...section,
+          rows: [
+            ...section.rows,
+            { cells: Array.from({ length: cellCount }, () => ({ bn: "", en: "" })) },
+          ],
+        };
+      }),
+    );
+  };
+
+  const removePromoTableRow = (sectionIndex, rowIndex) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        rows: section.rows.filter((_, i) => i !== rowIndex),
+      })),
+    );
+  };
+
+  const setPromoTableCellValue = (sectionIndex, rowIndex, cellIndex, key, value) => {
+    updateSections((sections) =>
+      mapSection(sections, sectionIndex, (section) => ({
+        ...section,
+        rows: section.rows.map((row, i) =>
+          i === rowIndex
+            ? {
+                cells: row.cells.map((cell, j) =>
+                  j === cellIndex ? { ...cell, [key]: value } : cell,
+                ),
+              }
+            : row,
+        ),
+      })),
+    );
   };
 
   const loadSliders = async () => {
@@ -323,17 +418,10 @@ const AddSlider = () => {
         "promoTable",
         JSON.stringify({
           enabled: form.promoTableEnabled,
-          col1Label: {
-            bn: form.promoTableCol1LabelBn,
-            en: form.promoTableCol1LabelEn,
-          },
-          col2Label: {
-            bn: form.promoTableCol2LabelBn,
-            en: form.promoTableCol2LabelEn,
-          },
-          rows: form.promoTableRows.map((row) => ({
-            col1: { bn: row.col1Bn, en: row.col1En },
-            col2: { bn: row.col2Bn, en: row.col2En },
+          sections: form.promoTableSections.map((section) => ({
+            label: { bn: section.labelBn, en: section.labelEn },
+            columns: section.columns,
+            rows: section.rows,
           })),
         }),
       );
@@ -571,18 +659,17 @@ const AddSlider = () => {
                 <div>
                   <label className={labelClass}>Promo Banner Image</label>
                   <p className="mb-2 text-xs text-slate-400">
-                    প্রস্তাবিত সাইজ: 1200 x 500px (অনুপাত ~2.4:1), landscape
-                    ব্যানার ইমেজ
+                    প্রস্তাবিত সাইজ: 1920 x 476px, landscape ব্যানার ইমেজ
                   </p>
                   <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#1A79D3]/40 bg-black/40 p-4 text-center transition hover:border-[#3ea0ff] hover:bg-[#1A79D3]/10">
                     {promoPreview ? (
                       <img
                         src={promoPreview}
                         alt="Promo Preview"
-                        className="aspect-video w-full rounded-xl object-cover"
+                        className="aspect-1920/476 w-full rounded-xl object-cover"
                       />
                     ) : (
-                      <div className="flex aspect-video w-full flex-col items-center justify-center rounded-xl bg-black/30">
+                      <div className="flex aspect-1920/476 w-full flex-col items-center justify-center rounded-xl bg-black/30">
                         <ImagePlus className="mb-3 h-10 w-10 text-[#3ea0ff]" />
                         <p className="text-sm font-black text-slate-100">
                           Click to upload promo image
@@ -676,173 +763,235 @@ const AddSlider = () => {
                       className="h-4 w-4 cursor-pointer accent-[#3ea0ff]"
                     />
                     <span className="text-sm font-black text-blue-100">
-                      Event Details Table (যেমন Frequency / Prizes)
+                      Event Details Sections
                     </span>
                   </label>
 
+                  <p className="mt-2 text-xs text-slate-400">
+                    প্রতিটা সেকশনের বাম পাশে একটা লেবেল থাকবে (যেমন "Eligible
+                    Tier")। Column যোগ করলে সেকশনটা টেবিল হবে (যেমন Bonus % /
+                    Tier Level), Column না দিলে সেকশনটা সাধারণ লিস্ট হিসেবে
+                    দেখাবে (যেমন "Eligible Games")।
+                  </p>
+
                   {form.promoTableEnabled && (
                     <div className="mt-4 space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <label className={labelClass}>
-                            Column 1 Label (BN)
-                          </label>
-                          <input
-                            type="text"
-                            className={inputClass}
-                            value={form.promoTableCol1LabelBn}
-                            onChange={(e) =>
-                              setValue(
-                                "promoTableCol1LabelBn",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="যেমন: ফ্রিকোয়েন্সি"
-                          />
-                        </div>
-
-                        <div>
-                          <label className={labelClass}>
-                            Column 1 Label (EN)
-                          </label>
-                          <input
-                            type="text"
-                            className={inputClass}
-                            value={form.promoTableCol1LabelEn}
-                            onChange={(e) =>
-                              setValue(
-                                "promoTableCol1LabelEn",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="e.g. Frequency"
-                          />
-                        </div>
-
-                        <div>
-                          <label className={labelClass}>
-                            Column 2 Label (BN)
-                          </label>
-                          <input
-                            type="text"
-                            className={inputClass}
-                            value={form.promoTableCol2LabelBn}
-                            onChange={(e) =>
-                              setValue(
-                                "promoTableCol2LabelBn",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="যেমন: পুরস্কার"
-                          />
-                        </div>
-
-                        <div>
-                          <label className={labelClass}>
-                            Column 2 Label (EN)
-                          </label>
-                          <input
-                            type="text"
-                            className={inputClass}
-                            value={form.promoTableCol2LabelEn}
-                            onChange={(e) =>
-                              setValue(
-                                "promoTableCol2LabelEn",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="e.g. Prizes"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        {form.promoTableRows.map((row, index) => (
-                          <div
-                            key={index}
-                            className="rounded-xl border border-[#1A79D3]/20 bg-black/40 p-3"
-                          >
-                            <div className="mb-2 flex items-center justify-between">
-                              <span className="text-xs font-black text-slate-400">
-                                Row {index + 1}
-                              </span>
-
-                              <button
-                                type="button"
-                                onClick={() => removePromoTableRow(index)}
-                                className="flex cursor-pointer items-center gap-1 rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-200 hover:bg-red-500/20"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Remove
-                              </button>
-                            </div>
-
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <input
-                                type="text"
-                                className={inputClass}
-                                value={row.col1Bn}
-                                onChange={(e) =>
-                                  setPromoTableRowValue(
-                                    index,
-                                    "col1Bn",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Column 1 (BN)"
-                              />
-                              <input
-                                type="text"
-                                className={inputClass}
-                                value={row.col1En}
-                                onChange={(e) =>
-                                  setPromoTableRowValue(
-                                    index,
-                                    "col1En",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Column 1 (EN)"
-                              />
-                              <input
-                                type="text"
-                                className={inputClass}
-                                value={row.col2Bn}
-                                onChange={(e) =>
-                                  setPromoTableRowValue(
-                                    index,
-                                    "col2Bn",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Column 2 (BN)"
-                              />
-                              <input
-                                type="text"
-                                className={inputClass}
-                                value={row.col2En}
-                                onChange={(e) =>
-                                  setPromoTableRowValue(
-                                    index,
-                                    "col2En",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Column 2 (EN)"
-                              />
-                            </div>
-                          </div>
-                        ))}
-
-                        <button
-                          type="button"
-                          onClick={addPromoTableRow}
-                          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#1A79D3]/40 bg-[#1A79D3]/10 px-4 py-2.5 text-sm font-black text-blue-100 hover:bg-[#1A79D3]/20"
+                      {form.promoTableSections.map((section, sectionIndex) => (
+                        <div
+                          key={sectionIndex}
+                          className="space-y-3 rounded-xl border border-[#1A79D3]/20 bg-black/40 p-3"
                         >
-                          <Plus className="h-4 w-4" />
-                          Add Row
-                        </button>
-                      </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-slate-400">
+                              Section {sectionIndex + 1}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removePromoTableSection(sectionIndex)
+                              }
+                              className="flex cursor-pointer items-center gap-1 rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-200 hover:bg-red-500/20"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove Section
+                            </button>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <input
+                              type="text"
+                              className={inputClass}
+                              value={section.labelBn}
+                              onChange={(e) =>
+                                setPromoTableSectionLabel(
+                                  sectionIndex,
+                                  "labelBn",
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="Section Label (BN) — যেমন: এলিজিবল টায়ার"
+                            />
+                            <input
+                              type="text"
+                              className={inputClass}
+                              value={section.labelEn}
+                              onChange={(e) =>
+                                setPromoTableSectionLabel(
+                                  sectionIndex,
+                                  "labelEn",
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="Section Label (EN) — e.g. Eligible Tier"
+                            />
+                          </div>
+
+                          <div className="space-y-2 rounded-lg border border-[#1A79D3]/10 bg-black/30 p-2">
+                            <p className="text-[11px] font-bold text-slate-400">
+                              Columns (খালি রাখলে সেকশনটা শুধু লিস্ট হবে, কোনো
+                              header row থাকবে না)
+                            </p>
+
+                            {section.columns.map((col, colIndex) => (
+                              <div
+                                key={colIndex}
+                                className="flex items-center gap-2"
+                              >
+                                <input
+                                  type="text"
+                                  className={`${inputClass} flex-1`}
+                                  value={col.bn}
+                                  onChange={(e) =>
+                                    setPromoTableColumnValue(
+                                      sectionIndex,
+                                      colIndex,
+                                      "bn",
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder={`Column ${colIndex + 1} (BN)`}
+                                />
+                                <input
+                                  type="text"
+                                  className={`${inputClass} flex-1`}
+                                  value={col.en}
+                                  onChange={(e) =>
+                                    setPromoTableColumnValue(
+                                      sectionIndex,
+                                      colIndex,
+                                      "en",
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder={`Column ${colIndex + 1} (EN)`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removePromoTableColumn(
+                                      sectionIndex,
+                                      colIndex,
+                                    )
+                                  }
+                                  className="flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-red-400/20 bg-red-500/10 p-2 text-red-200 hover:bg-red-500/20"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={() => addPromoTableColumn(sectionIndex)}
+                              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[#1A79D3]/40 bg-[#1A79D3]/10 px-3 py-2 text-xs font-black text-blue-100 hover:bg-[#1A79D3]/20"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              Add Column
+                            </button>
+                          </div>
+
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-bold text-slate-400">
+                              Rows
+                            </p>
+
+                            {section.rows.map((row, rowIndex) => (
+                              <div
+                                key={rowIndex}
+                                className="rounded-lg border border-[#1A79D3]/10 bg-black/30 p-2"
+                              >
+                                <div className="mb-1 flex items-center justify-between">
+                                  <span className="text-[11px] text-slate-500">
+                                    Row {rowIndex + 1}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removePromoTableRow(
+                                        sectionIndex,
+                                        rowIndex,
+                                      )
+                                    }
+                                    className="flex cursor-pointer items-center gap-1 rounded-lg border border-red-400/20 bg-red-500/10 px-2 py-1 text-xs font-bold text-red-200 hover:bg-red-500/20"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Remove
+                                  </button>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {row.cells.map((cell, cellIndex) => {
+                                    const columnLabel =
+                                      section.columns[cellIndex]?.en ||
+                                      section.columns[cellIndex]?.bn ||
+                                      (section.columns.length
+                                        ? `Column ${cellIndex + 1}`
+                                        : "Item");
+
+                                    return (
+                                      <div
+                                        key={cellIndex}
+                                        className="grid gap-2 md:grid-cols-2"
+                                      >
+                                        <input
+                                          type="text"
+                                          className={inputClass}
+                                          value={cell.bn}
+                                          onChange={(e) =>
+                                            setPromoTableCellValue(
+                                              sectionIndex,
+                                              rowIndex,
+                                              cellIndex,
+                                              "bn",
+                                              e.target.value,
+                                            )
+                                          }
+                                          placeholder={`${columnLabel} (BN)`}
+                                        />
+                                        <input
+                                          type="text"
+                                          className={inputClass}
+                                          value={cell.en}
+                                          onChange={(e) =>
+                                            setPromoTableCellValue(
+                                              sectionIndex,
+                                              rowIndex,
+                                              cellIndex,
+                                              "en",
+                                              e.target.value,
+                                            )
+                                          }
+                                          placeholder={`${columnLabel} (EN)`}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+
+                            <button
+                              type="button"
+                              onClick={() => addPromoTableRow(sectionIndex)}
+                              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#1A79D3]/40 bg-[#1A79D3]/10 px-4 py-2.5 text-sm font-black text-blue-100 hover:bg-[#1A79D3]/20"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add Row
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={addPromoTableSection}
+                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[#1A79D3]/40 bg-[#1A79D3]/10 px-4 py-2.5 text-sm font-black text-blue-100 hover:bg-[#1A79D3]/20"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add Section
+                      </button>
                     </div>
                   )}
                 </div>

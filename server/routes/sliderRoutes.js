@@ -106,10 +106,13 @@ const cleanBiText = (value = {}) => ({
   en: cleanText(value?.en),
 });
 
-// promoTable is a nested structure (rows array) — multipart form bodies
-// are flat key/value strings, so the client sends it as one JSON string
-// field and this parses it back, falling back to "disabled/empty" on any
-// malformed input instead of failing the whole request.
+// promoTable is a nested structure (sections -> columns/rows) — multipart
+// form bodies are flat key/value strings, so the client sends it as one
+// JSON string field and this parses it back, falling back to
+// "disabled/empty" on any malformed input instead of failing the whole
+// request. Each section is either a multi-column table (columns.length
+// > 0) or a plain list (no columns, one cell per row) — e.g. a deposit
+// bonus's "Eligible Tier" table plus a separate "Eligible Games" list.
 const parsePromoTable = (raw) => {
   let value;
 
@@ -119,29 +122,40 @@ const parsePromoTable = (raw) => {
     value = null;
   }
 
-  if (!value || typeof value !== "object") {
-    return {
-      enabled: false,
-      col1Label: { bn: "", en: "" },
-      col2Label: { bn: "", en: "" },
-      rows: [],
-    };
+  if (!value || typeof value !== "object" || !Array.isArray(value.sections)) {
+    return { enabled: false, sections: [] };
   }
 
-  const rows = Array.isArray(value.rows)
-    ? value.rows
-        .map((row) => ({
-          col1: cleanBiText(row?.col1),
-          col2: cleanBiText(row?.col2),
-        }))
-        .filter((row) => row.col1.bn || row.col1.en || row.col2.bn || row.col2.en)
-    : [];
+  const sections = value.sections
+    .map((section) => {
+      const columns = Array.isArray(section?.columns)
+        ? section.columns.map((col) => cleanBiText(col))
+        : [];
+
+      const rows = Array.isArray(section?.rows)
+        ? section.rows
+            .map((row) => ({
+              cells: Array.isArray(row?.cells)
+                ? row.cells.map((cell) => cleanBiText(cell))
+                : [],
+            }))
+            .filter((row) => row.cells.some((cell) => cell.bn || cell.en))
+        : [];
+
+      return {
+        label: cleanBiText(section?.label),
+        columns,
+        rows,
+      };
+    })
+    .filter(
+      (section) =>
+        section.label.bn || section.label.en || section.rows.length > 0,
+    );
 
   return {
-    enabled: Boolean(value.enabled) && rows.length > 0,
-    col1Label: cleanBiText(value.col1Label),
-    col2Label: cleanBiText(value.col2Label),
-    rows,
+    enabled: Boolean(value.enabled) && sections.length > 0,
+    sections,
   };
 };
 

@@ -103,9 +103,10 @@ const renderBody = (text, colors) => {
 };
 
 // Single-banner popup for a slider in "promo" mode — image, blue title
-// bar, rich body text and an optional details table (e.g. a weekly draw's
-// Frequency/Prizes table). Deliberately smaller than PromotionModal (no
-// list/search), since a slide only ever shows its own one promo.
+// bar, rich body text and optional labeled sections below it (e.g. a
+// deposit bonus's "Eligible Tier" table plus a separate "Eligible Games"
+// list). Deliberately smaller than PromotionModal (no list/search), since
+// a slide only ever shows its own one promo.
 const SliderPromoModal = ({ open, onClose, image, title, description, table }) => {
   const { isBangla } = useLanguage();
 
@@ -115,11 +116,8 @@ const SliderPromoModal = ({ open, onClose, image, title, description, table }) =
     ...(modalColorSetting || {}),
   };
 
-  const tableRows = Array.isArray(table?.rows) ? table.rows : [];
-  const showTable = Boolean(table?.enabled) && tableRows.length > 0;
-
-  const col1Label = isBangla ? table?.col1Label?.bn : table?.col1Label?.en;
-  const col2Label = isBangla ? table?.col2Label?.bn : table?.col2Label?.en;
+  const sections = Array.isArray(table?.sections) ? table.sections : [];
+  const showTable = Boolean(table?.enabled) && sections.length > 0;
 
   return (
     <AnimatePresence>
@@ -165,66 +163,139 @@ const SliderPromoModal = ({ open, onClose, image, title, description, table }) =
             </div>
 
             {description || showTable ? (
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              <div className="promo-modal-scroll flex-1 overflow-y-auto px-4 py-4">
                 {renderBody(description, colors)}
 
                 {showTable && (
                   <div
-                    className="mt-4 overflow-hidden rounded-[6px] border"
+                    className="mt-4 divide-y overflow-hidden rounded-[6px] border"
                     style={{ borderColor: colors.cardBorder }}
                   >
-                    <table className="w-full border-collapse text-left">
-                      <thead>
-                        <tr>
-                          <th
-                            className="px-3 py-2 text-[13px] font-bold"
-                            style={{
-                              backgroundColor: colors.headerBg,
-                              color: colors.headerText,
-                            }}
-                          >
-                            {col1Label}
-                          </th>
-                          <th
-                            className="px-3 py-2 text-[13px] font-bold"
-                            style={{
-                              backgroundColor: colors.headerBg,
-                              color: colors.headerText,
-                            }}
-                          >
-                            {col2Label}
-                          </th>
-                        </tr>
-                      </thead>
+                    {sections.map((section, sectionIndex) => {
+                      const sectionLabel = isBangla
+                        ? section?.label?.bn
+                        : section?.label?.en;
+                      const columns = Array.isArray(section?.columns)
+                        ? section.columns
+                        : [];
+                      const rows = Array.isArray(section?.rows)
+                        ? section.rows
+                        : [];
+                      const hasColumns = columns.length > 0;
 
-                      <tbody>
-                        {tableRows.map((row, index) => (
-                          <tr
-                            key={index}
-                            className="border-t"
-                            style={{ borderColor: colors.cardBorder }}
-                          >
-                            <td
-                              className="px-3 py-2 text-[13px]"
-                              style={{ color: colors.normalText }}
+                      return (
+                        <div
+                          key={sectionIndex}
+                          className="flex items-stretch"
+                          style={{ borderColor: colors.cardBorder }}
+                        >
+                          {sectionLabel ? (
+                            <div
+                              className="flex w-[92px] shrink-0 items-center justify-center border-r px-2 py-3 text-center text-[12px] font-bold"
+                              style={{
+                                backgroundColor: colors.headerBg,
+                                color: colors.headerText,
+                                borderColor: colors.cardBorder,
+                              }}
                             >
-                              {isBangla ? row?.col1?.bn : row?.col1?.en}
-                            </td>
-                            <td
-                              className="px-3 py-2 text-[13px]"
-                              style={{ color: colors.normalText }}
-                            >
-                              {isBangla ? row?.col2?.bn : row?.col2?.en}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                              {sectionLabel}
+                            </div>
+                          ) : null}
+
+                          <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {hasColumns ? (
+                              <table className="w-full min-w-max border-collapse text-left">
+                                <thead>
+                                  <tr>
+                                    {columns.map((col, colIndex) => (
+                                      <th
+                                        key={colIndex}
+                                        className="px-3 py-2 text-[12px] font-bold"
+                                        style={{
+                                          backgroundColor: colors.headerBg,
+                                          color: colors.headerText,
+                                        }}
+                                      >
+                                        {isBangla ? col?.bn : col?.en}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {rows.map((row, rowIndex) => (
+                                    <tr
+                                      key={rowIndex}
+                                      className="border-t"
+                                      style={{ borderColor: colors.cardBorder }}
+                                    >
+                                      {(row?.cells || []).map(
+                                        (cell, cellIndex) => (
+                                          <td
+                                            key={cellIndex}
+                                            className="px-3 py-2 text-[12px]"
+                                            style={{ color: colors.normalText }}
+                                          >
+                                            {isBangla ? cell?.bn : cell?.en}
+                                          </td>
+                                        ),
+                                      )}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <div className="divide-y" style={{ borderColor: colors.cardBorder }}>
+                                {rows.map((row, rowIndex) => (
+                                  <div
+                                    key={rowIndex}
+                                    className="px-3 py-2 text-[12px]"
+                                    style={{
+                                      color: colors.normalText,
+                                      borderColor: colors.cardBorder,
+                                    }}
+                                  >
+                                    {isBangla
+                                      ? row?.cells?.[0]?.bn
+                                      : row?.cells?.[0]?.en}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             ) : null}
           </motion.div>
+
+          <style>{`
+            .promo-modal-scroll::-webkit-scrollbar {
+              width: 6px;
+            }
+
+            .promo-modal-scroll::-webkit-scrollbar-track {
+              background: rgba(0, 0, 0, 0.06);
+              border-radius: 20px;
+            }
+
+            .promo-modal-scroll::-webkit-scrollbar-thumb {
+              background: rgba(0, 0, 0, 0.28);
+              border-radius: 20px;
+            }
+
+            .promo-modal-scroll::-webkit-scrollbar-thumb:hover {
+              background: rgba(0, 0, 0, 0.45);
+            }
+
+            .promo-modal-scroll {
+              scrollbar-width: thin;
+              scrollbar-color: rgba(0, 0, 0, 0.28) rgba(0, 0, 0, 0.06);
+            }
+          `}</style>
         </div>
       )}
     </AnimatePresence>

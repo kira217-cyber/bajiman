@@ -129,32 +129,42 @@ const SliderSchema = new mongoose.Schema(
       en: { type: String, default: "", trim: true },
     },
 
-    // Optional structured 2-column table (e.g. "Event Details":
-    // Frequency / Prizes) rendered below the body text.
+    // Optional structured content rendered below the body text — one or
+    // more labeled sections (e.g. "Eligible Tier", "Eligible Games"), each
+    // either a multi-column table (columns set) or a plain list (no
+    // columns), matching a real promo layout like a deposit bonus's tier
+    // table plus a separate eligible-games list.
     promoTable: {
       enabled: { type: Boolean, default: false },
 
-      col1Label: {
-        bn: { type: String, default: "", trim: true },
-        en: { type: String, default: "", trim: true },
-      },
-
-      col2Label: {
-        bn: { type: String, default: "", trim: true },
-        en: { type: String, default: "", trim: true },
-      },
-
-      rows: [
+      sections: [
         {
           _id: false,
-          col1: {
+          label: {
             bn: { type: String, default: "", trim: true },
             en: { type: String, default: "", trim: true },
           },
-          col2: {
-            bn: { type: String, default: "", trim: true },
-            en: { type: String, default: "", trim: true },
-          },
+
+          columns: [
+            {
+              _id: false,
+              bn: { type: String, default: "", trim: true },
+              en: { type: String, default: "", trim: true },
+            },
+          ],
+
+          rows: [
+            {
+              _id: false,
+              cells: [
+                {
+                  _id: false,
+                  bn: { type: String, default: "", trim: true },
+                  en: { type: String, default: "", trim: true },
+                },
+              ],
+            },
+          ],
         },
       ],
     },
