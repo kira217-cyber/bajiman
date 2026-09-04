@@ -68,6 +68,13 @@ const TurnoverProviderSetting = () => {
   const loading = providersLoading || settingLoading;
   const selectedCount = Object.keys(providerPercents).length;
 
+  const totalPercent = Object.values(providerPercents).reduce(
+    (sum, value) => sum + Number(value || 0),
+    0,
+  );
+  const openPercent = Math.max(0, 100 - totalPercent);
+  const overLimit = totalPercent > 100;
+
   const toggleProvider = (code) => {
     setProviderPercents((prev) => {
       const next = { ...prev };
@@ -97,6 +104,11 @@ const TurnoverProviderSetting = () => {
   };
 
   const handleSave = async () => {
+    if (overLimit) {
+      toast.error("Selected providers' percent যোগফল ১০০%-এর বেশি হতে পারবে না");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -134,11 +146,13 @@ const TurnoverProviderSetting = () => {
                   Turnover Eligible Providers
                 </h1>
                 <p className="text-sm text-blue-100/80">
-                  শুধু select করা provider-এর game খেললে turnover fill up
-                  হবে, প্রতিটার পাশের percent অনুযায়ী (১০০% মানে পুরো wager
-                  count হবে)। কিছু select না করলে সব provider ১০০%-ই count
-                  হবে। এই provider list মাস্টার প্যানেল থেকে লাইভ লোড হয় —
-                  game API key active থাকতে হবে।
+                  প্রতিটা provider-এর percent মানে হলো প্রতিটা turnover-এর
+                  একটা নির্দিষ্ট অংশ, যেটা <b>শুধু ওই provider খেলেই</b>{" "}
+                  পূরণ করতে হবে (যেমন ৫০%+৫০% দিলে পুরোটাই দুই provider-এ
+                  ভাগ হয়ে যাবে)। যোগফল ১০০%-এর কম হলে বাকিটা যেকোনো
+                  provider খেলেই পূরণ করা যাবে। কিছু select না করলে সব
+                  provider ১০০%-ই unrestricted থাকবে। Provider list মাস্টার
+                  প্যানেল থেকে লাইভ লোড হয় — game API key active থাকতে হবে।
                 </p>
               </div>
             </div>
@@ -158,7 +172,7 @@ const TurnoverProviderSetting = () => {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || overLimit}
                 className={btnPrimary}
               >
                 <span className="flex items-center gap-2">
@@ -171,15 +185,30 @@ const TurnoverProviderSetting = () => {
         </div>
 
         <div className={`${sectionCard} p-5 lg:p-6`}>
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div>
               <h2 className="text-xl font-bold text-white">Providers</h2>
               <p className="mt-1 text-sm text-blue-100/70">
                 {selectedCount
                   ? `${selectedCount} provider(s) selected`
-                  : "কোনো restriction নেই — সব provider ১০০% count হচ্ছে"}
+                  : "কোনো restriction নেই — সব provider unrestricted"}
               </p>
             </div>
+
+            {selectedCount ? (
+              <div
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
+                  overLimit
+                    ? "border-red-400/40 bg-red-500/10 text-red-200"
+                    : "border-blue-300/20 bg-black/30 text-blue-100"
+                }`}
+              >
+                Dedicated: {totalPercent}%
+                {overLimit
+                  ? " — ১০০%-এর বেশি, কমাও"
+                  : ` · Open (যেকোনো provider): ${openPercent}%`}
+              </div>
+            ) : null}
           </div>
 
           {providersError ? (

@@ -92,6 +92,64 @@ const percent = (progress, required) => {
   return Math.min(100, Math.max(0, Math.floor((p / r) * 100)));
 };
 
+const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+// Each eligible provider's percent is a dedicated minimum share of a
+// turnover's required amount (see TurnoverProviderSetting) — build one
+// progress bucket per provider plus, if their percents don't add up to
+// 100, one "open" bucket any provider can fill. Mirrors the exact
+// allocation logic in server/routes/callbackRoutes.js.
+const buildProviderBreakdown = (item, eligibleProviders, openLabel) => {
+  if (!eligibleProviders.length) return [];
+
+  const required = Number(item?.required || 0);
+  const providerProgressList = Array.isArray(item?.providerProgress)
+    ? item.providerProgress
+    : [];
+
+  const sumProviderProgress = providerProgressList.reduce(
+    (sum, entry) => sum + Number(entry?.progress || 0),
+    0,
+  );
+
+  const totalEligiblePercent = Math.min(
+    100,
+    eligibleProviders.reduce((sum, provider) => sum + provider.percent, 0),
+  );
+  const openPercent = Math.max(0, 100 - totalEligiblePercent);
+  const openDone = Math.max(0, round2(Number(item?.progress || 0) - sumProviderProgress));
+
+  const buckets = eligibleProviders.map((provider) => {
+    const entry = providerProgressList.find(
+      (p) => String(p?.providerCode || "").toUpperCase() === provider.code,
+    );
+    const quota = round2((required * provider.percent) / 100);
+    const done = round2(Math.min(quota, Number(entry?.progress || 0)));
+
+    return {
+      key: provider.code,
+      name: provider.name,
+      iconUrl: provider.iconUrl,
+      quota,
+      done,
+    };
+  });
+
+  if (openPercent > 0) {
+    const openQuota = round2((required * openPercent) / 100);
+
+    buckets.push({
+      key: "__open__",
+      name: openLabel,
+      iconUrl: "",
+      quota: openQuota,
+      done: round2(Math.min(openQuota, openDone)),
+    });
+  }
+
+  return buckets;
+};
+
 const TurnoverHistoryModal = ({ onBackToDeposit }) => {
   const { isBangla } = useLanguage();
 
@@ -132,11 +190,15 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     completed: isBangla ? "সম্পন্ন" : "Completed",
     refresh: isBangla ? "রিফ্রেশ" : "Refresh",
     eligibleTitle: isBangla
-      ? "যেসব প্রোভাইডারের গেম খেললে টার্নওভার পূরণ হবে"
-      : "Providers whose games count toward turnover",
+      ? "টার্নওভার পূরণ করতে যেসব প্রোভাইডার খেলা বাধ্যতামূলক"
+      : "Providers required to complete turnover",
     eligibleUnrestricted: isBangla
       ? "এখন যেকোনো প্রোভাইডারের গেম খেললেই টার্নওভার পূরণ হবে"
       : "Right now, any provider's games count toward turnover",
+    openBucket: isBangla ? "অন্য যেকোনো প্রোভাইডার" : "Any other provider",
+    providerBreakdown: isBangla
+      ? "প্রোভাইডার অনুযায়ী অগ্রগতি"
+      : "Progress by provider",
   };
 
   const queryParams = useMemo(() => {
@@ -188,6 +250,17 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
       })
       .filter((item) => item.code);
   }, [eligibleRes, gameProviders]);
+
+  const eligibleOpenPercent = eligibleProviders.length
+    ? Math.max(
+        0,
+        100 -
+          Math.min(
+            100,
+            eligibleProviders.reduce((sum, p) => sum + p.percent, 0),
+          ),
+      )
+    : 0;
 
   const rows = Array.isArray(data?.data) ? data.data : [];
   const meta = data?.meta || {};
@@ -324,6 +397,30 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
                   </span>
                 </div>
               ))}
+
+              {eligibleOpenPercent > 0 ? (
+                <div
+                  className="flex items-center gap-2 rounded-full border border-dashed px-2 py-1"
+                  style={{ borderColor: colors.cardBorder }}
+                >
+                  <span
+                    className="text-[11px] font-bold"
+                    style={{ color: colors.mutedText }}
+                  >
+                    {t.openBucket}
+                  </span>
+
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                    style={{
+                      backgroundColor: colors.inputBg,
+                      color: colors.mutedText,
+                    }}
+                  >
+                    {eligibleOpenPercent}%
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-[12px]" style={{ color: colors.mutedText }}>
@@ -499,6 +596,93 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
                       />
                     </div>
                   </div>
+
+                  {eligibleProviders.length ? (
+                    <div className="mt-3">
+                      <p
+                        className="mb-2 text-[11px] font-bold"
+                        style={{ color: colors.mutedText }}
+                      >
+                        {t.providerBreakdown}
+                      </p>
+
+                      <div className="space-y-2">
+                        {buildProviderBreakdown(
+                          item,
+                          eligibleProviders,
+                          t.openBucket,
+                        ).map((bucket) => {
+                          const bucketPercent =
+                            bucket.quota > 0
+                              ? Math.min(
+                                  100,
+                                  Math.floor((bucket.done / bucket.quota) * 100),
+                                )
+                              : 0;
+                          const bucketDone =
+                            bucket.quota > 0 && bucket.done >= bucket.quota;
+
+                          return (
+                            <div
+                              key={bucket.key}
+                              className="rounded-[4px] p-2"
+                              style={{ backgroundColor: colors.inputBg }}
+                            >
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  {bucket.iconUrl ? (
+                                    <img
+                                      src={bucket.iconUrl}
+                                      alt={bucket.name}
+                                      className="h-4 w-4 shrink-0 rounded object-contain"
+                                    />
+                                  ) : null}
+
+                                  <span
+                                    className="truncate font-bold"
+                                    style={{ color: colors.normalText }}
+                                  >
+                                    {bucket.name}
+                                  </span>
+
+                                  {bucketDone ? (
+                                    <CheckCircle2
+                                      size={12}
+                                      style={{ color: colors.successText }}
+                                    />
+                                  ) : null}
+                                </div>
+
+                                <span
+                                  className="shrink-0 font-bold"
+                                  style={{ color: colors.normalText }}
+                                >
+                                  {money(bucket.done)} / {money(bucket.quota)}
+                                </span>
+                              </div>
+
+                              <div
+                                className="mt-1 h-[5px] overflow-hidden rounded-full"
+                                style={{
+                                  backgroundColor: colors.progressTrackBg,
+                                }}
+                              >
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${bucketPercent}%`,
+                                    backgroundColor: bucketDone
+                                      ? colors.successText
+                                      : colors.progressBg,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div
                     className="mt-3 grid grid-cols-2 gap-2 text-[11px]"

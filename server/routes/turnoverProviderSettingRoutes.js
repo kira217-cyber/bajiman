@@ -61,6 +61,22 @@ router.put("/", protectAdmin, async (req, res) => {
       req.body?.eligibleProviders,
     );
 
+    // Each percent is a dedicated minimum share of every turnover's
+    // required amount, so the shares can never add up to more than the
+    // whole requirement.
+    const totalPercent = eligibleProviders.reduce(
+      (sum, item) => sum + item.percent,
+      0,
+    );
+
+    if (totalPercent > 100) {
+      return errorResponse(
+        res,
+        `Selected providers' percent adds up to ${totalPercent}% — the total can't exceed 100%.`,
+        400,
+      );
+    }
+
     const setting = await getOrCreateSetting();
     setting.eligibleProviders = eligibleProviders;
     await setting.save();

@@ -56,6 +56,20 @@ const TurnOverSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // How much of `progress` has been contributed specifically by each
+    // eligible provider's dedicated quota (TurnoverProviderSetting), so a
+    // provider's mandatory minimum share can be tracked and capped
+    // per-card. Progress beyond what's listed here came from the shared
+    // "any provider" pool. Only populated once provider-gated turnover is
+    // configured — empty for unrestricted turnovers.
+    providerProgress: [
+      {
+        _id: false,
+        providerCode: { type: String, required: true, uppercase: true, trim: true },
+        progress: { type: Number, default: 0, min: 0 },
+      },
+    ],
   },
   { timestamps: true },
 );

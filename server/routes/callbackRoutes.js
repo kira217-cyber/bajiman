@@ -2,9 +2,8 @@ import express from "express";
 import User from "../models/User.js";
 import TurnOver from "../models/TurnOver.js";
 import GameHistory from "../models/GameHistory.js";
-import Game from "../models/Game.js";
-import GameProvider from "../models/GameProvider.js";
 import TurnoverProviderSetting from "../models/TurnoverProviderSetting.js";
+import { resolveProviderCodeFromCatalog } from "../utils/gameProviderCatalog.js";
 
 const router = express.Router();
 
@@ -34,10 +33,49 @@ const cleanMemberAccount = (value = "") => {
   return username;
 };
 
-/* ----------------------------- TURNOVER PROGRESS ----------------------------- */
-const applyTurnoverProgress = async ({ userId, wagerAmount }) => {
+/* ----------------------------- TURNOVER PROGRESS -----------------------------
+   Empty eligible-provider list = fully unrestricted (any provider counts
+   1:1, unchanged legacy behavior). Once an admin configures the list, each
+   provider's percent is a MANDATORY MINIMUM SHARE of every turnover's
+   required amount — e.g. 50%+50% across two providers splits the whole
+   requirement into two dedicated caps, so wagering only on one provider
+   can never finish it. Any leftover percent (100 - sum of configured
+   percents) is an open pool any provider (including eligible ones, once
+   their own cap is full) can fill. If the configured percents sum to
+   100, there's no open pool and a non-eligible provider's wager counts
+   for nothing. */
+const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
   const amt = money(wagerAmount);
   if (amt <= 0) return false;
+
+  const setting = await TurnoverProviderSetting.findOne()
+    .select("eligibleProviders")
+    .lean();
+
+  const eligible = setting?.eligibleProviders || [];
+
+  const providerCode = eligible.length
+    ? await resolveProviderCodeFromCatalog(gameUId)
+    : null;
+
+  const match = providerCode
+    ? eligible.find(
+        (item) => String(item.providerCode).toUpperCase() === providerCode,
+      )
+    : null;
+
+  const sumPercent = eligible.length
+    ? Math.min(
+        100,
+        eligible.reduce((sum, item) => sum + Number(item.percent || 0), 0),
+      )
+    : 0;
+
+  const openPercent = eligible.length ? Math.max(0, 100 - sumPercent) : 100;
+
+  // Restricted setup, this provider isn't eligible, and there's no open
+  // pool to fall back on — the wager can't contribute to anything.
+  if (eligible.length && !match && openPercent <= 0) return false;
 
   const turnovers = await TurnOver.find({
     user: userId,
@@ -52,7 +90,7 @@ const applyTurnoverProgress = async ({ userId, wagerAmount }) => {
 
     const required = money(turnover.required);
     const progress = money(turnover.progress);
-    const left = Math.max(0, money(required - progress));
+    let left = Math.max(0, money(required - progress));
 
     if (left <= 0) {
       await TurnOver.updateOne(
@@ -68,61 +106,94 @@ const applyTurnoverProgress = async ({ userId, wagerAmount }) => {
       continue;
     }
 
-    const add = money(Math.min(left, remaining));
+    let dedicatedAdd = 0;
+    let openAdd = 0;
+
+    if (!eligible.length) {
+      openAdd = money(Math.min(left, remaining));
+    } else {
+      const providerProgressList = turnover.providerProgress || [];
+      const sumProviderProgress = money(
+        providerProgressList.reduce((s, p) => s + money(p.progress || 0), 0),
+      );
+      const currentOpenProgress = money(
+        Math.max(0, progress - sumProviderProgress),
+      );
+
+      let pool = remaining;
+
+      if (match) {
+        const entry = providerProgressList.find(
+          (p) => p.providerCode === providerCode,
+        );
+        const currentProviderProgress = money(entry?.progress || 0);
+        const providerQuota = money((required * Number(match.percent || 0)) / 100);
+        const providerRoom = Math.max(
+          0,
+          money(providerQuota - currentProviderProgress),
+        );
+
+        dedicatedAdd = money(Math.min(providerRoom, pool, left));
+        pool = money(pool - dedicatedAdd);
+        left = money(left - dedicatedAdd);
+      }
+
+      if (pool > 0 && openPercent > 0 && left > 0) {
+        const openQuota = money((required * openPercent) / 100);
+        const openRoom = Math.max(0, money(openQuota - currentOpenProgress));
+        openAdd = money(Math.min(openRoom, pool, left));
+      }
+    }
+
+    const add = money(dedicatedAdd + openAdd);
+
+    if (add <= 0) continue;
+
     const newProgress = money(progress + add);
     const completed = newProgress >= required;
 
-    await TurnOver.updateOne(
-      { _id: turnover._id },
-      {
-        $inc: { progress: add },
-        ...(completed
-          ? {
-              $set: {
-                status: "completed",
-                completedAt: new Date(),
-              },
-            }
-          : {}),
-      },
-    );
+    const setFields = completed
+      ? { status: "completed", completedAt: new Date() }
+      : null;
+
+    if (dedicatedAdd > 0 && providerCode) {
+      const hasEntry = (turnover.providerProgress || []).some(
+        (p) => p.providerCode === providerCode,
+      );
+
+      if (hasEntry) {
+        await TurnOver.updateOne(
+          { _id: turnover._id, "providerProgress.providerCode": providerCode },
+          {
+            $inc: { progress: add, "providerProgress.$.progress": dedicatedAdd },
+            ...(setFields ? { $set: setFields } : {}),
+          },
+        );
+      } else {
+        await TurnOver.updateOne(
+          { _id: turnover._id },
+          {
+            $inc: { progress: add },
+            $push: { providerProgress: { providerCode, progress: dedicatedAdd } },
+            ...(setFields ? { $set: setFields } : {}),
+          },
+        );
+      }
+    } else {
+      await TurnOver.updateOne(
+        { _id: turnover._id },
+        {
+          $inc: { progress: add },
+          ...(setFields ? { $set: setFields } : {}),
+        },
+      );
+    }
 
     applied = true;
     remaining = money(remaining - add);
   }
 
   return applied;
-};
-
-/* ----------------------------- TURNOVER PROVIDER PERCENT ----------------------------- */
-// Empty eligible-provider list = no restriction configured yet, so every
-// provider counts at 100% (unchanged behavior until an admin sets this up).
-// Once configured, ONLY listed providers count, each at its own percent —
-// e.g. a provider set to 50 only contributes half of what's wagered on it
-// toward turnover fulfillment.
-const getProviderTurnoverPercent = async (gameUId) => {
-  const setting = await TurnoverProviderSetting.findOne()
-    .select("eligibleProviders")
-    .lean();
-
-  const eligible = setting?.eligibleProviders || [];
-  if (!eligible.length) return 100;
-
-  const game = await Game.findOne({ gameUId }).select("providerDbId").lean();
-  if (!game?.providerDbId) return 0;
-
-  const provider = await GameProvider.findById(game.providerDbId)
-    .select("providerCode")
-    .lean();
-
-  if (!provider?.providerCode) return 0;
-
-  const code = String(provider.providerCode).toUpperCase();
-  const match = eligible.find(
-    (item) => String(item.providerCode).toUpperCase() === code,
-  );
-
-  return match ? Number(match.percent || 0) : 0;
 };
 
 /* ----------------------------- AFFILIATE COMMISSION ----------------------------- */
@@ -312,15 +383,12 @@ router.post("/", async (req, res) => {
 
     const finalBalance = money(updatedPlayer?.balance || 0);
 
-    const turnoverPercent =
-      betAmount > 0 ? await getProviderTurnoverPercent(gameUId) : 0;
-    const turnoverWager = money((betAmount * turnoverPercent) / 100);
-
     const turnoverApplied =
-      turnoverWager > 0
+      betAmount > 0
         ? await applyTurnoverProgress({
             userId: player._id,
-            wagerAmount: turnoverWager,
+            gameUId,
+            wagerAmount: betAmount,
           })
         : false;
 
@@ -403,4 +471,5 @@ router.post("/", async (req, res) => {
   }
 });
 
+export { applyTurnoverProgress };
 export default router;
