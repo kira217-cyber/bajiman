@@ -550,8 +550,8 @@ const AutoDepositHistory = () => {
                             </td>
 
                             <td className="px-6 py-4 text-white/90">
-                              x{Number(item?.calc?.turnoverMultiplier || 1)} /{" "}
-                              {money(item?.calc?.targetTurnover || item.amount)}
+                              x{Number(item?.calc?.turnoverMultiplier ?? 1)} /{" "}
+                              {money(item?.calc?.targetTurnover ?? item.amount)}
                             </td>
 
                             <td className="px-6 py-4">

@@ -204,7 +204,7 @@ const DepositFundsModal = ({ open, onClose, onNext }) => {
         name: { bn: t.noBonus, en: t.noBonus },
         bonusType: "fixed",
         bonusValue: 0,
-        turnoverMultiplier: selectedMethod?.turnoverMultiplier || 1,
+        turnoverMultiplier: selectedMethod?.turnoverMultiplier ?? 1,
       },
       ...list.sort((a, b) => n(a?.sort) - n(b?.sort)),
     ];
@@ -254,8 +254,8 @@ const DepositFundsModal = ({ open, onClose, onNext }) => {
 
     const turnoverMultiplier =
       selectedPromo && selectedPromo.id !== "none"
-        ? n(selectedPromo.turnoverMultiplier) || 1
-        : n(selectedMethod?.turnoverMultiplier) || 1;
+        ? n(selectedPromo.turnoverMultiplier ?? 1)
+        : n(selectedMethod?.turnoverMultiplier ?? 1);
 
     const creditedAmount = amountNum + totalBonus;
     const targetTurnover = creditedAmount * turnoverMultiplier;

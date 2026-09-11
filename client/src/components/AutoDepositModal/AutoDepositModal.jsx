@@ -95,7 +95,7 @@ const calcBonus = (amount, selectedBonus) => {
 
   const bonusType = String(selectedBonus?.bonusType || "fixed").toLowerCase();
   const bonusValue = n(selectedBonus?.bonusValue);
-  const turnoverMultiplier = n(selectedBonus?.turnoverMultiplier) || 1;
+  const turnoverMultiplier = n(selectedBonus?.turnoverMultiplier ?? 1);
 
   const bonusAmount =
     bonusType === "percent"
@@ -220,7 +220,7 @@ const AutoDepositModal = ({ open, onClose, onDepositClick }) => {
                 ? "first-deposit"
                 : "all-time",
             bonusValue: Number(item?.bonusValue || 0),
-            turnoverMultiplier: Number(item?.turnoverMultiplier || 1),
+            turnoverMultiplier: Number(item?.turnoverMultiplier ?? 1),
           })),
         );
       } catch (error) {

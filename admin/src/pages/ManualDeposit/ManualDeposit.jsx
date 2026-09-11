@@ -146,8 +146,8 @@ const ManualDeposit = () => {
     const totalBonus = percentBonus + promoBonus;
 
     const turnoverMultiplier = selectedPromo
-      ? n(selectedPromo.turnoverMultiplier) || 1
-      : n(selectedMethod?.turnoverMultiplier) || 1;
+      ? n(selectedPromo.turnoverMultiplier ?? 1)
+      : n(selectedMethod?.turnoverMultiplier ?? 1);
 
     const creditedAmount = amountNum + totalBonus;
     const targetTurnover = creditedAmount * turnoverMultiplier;

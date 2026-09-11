@@ -659,7 +659,7 @@ const DepositHistoryModal = ({ open, onClose, onBackToDeposit }) => {
                                   className="mt-1 font-bold"
                                   style={{ color: colors.normalText }}
                                 >
-                                  x{item?.calc?.turnoverMultiplier || 1}
+                                  x{item?.calc?.turnoverMultiplier ?? 1}
                                 </p>
                               </div>
                             </div>

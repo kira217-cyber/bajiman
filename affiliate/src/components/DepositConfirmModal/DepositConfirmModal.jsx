@@ -565,7 +565,7 @@ const DepositConfirmModal = ({
                   <div className="mt-1 flex justify-between">
                     <span>{t.turnover}</span>
                     <span className="font-bold">
-                      x{calculation.turnoverMultiplier || 1} /{" "}
+                      x{calculation.turnoverMultiplier ?? 1} /{" "}
                       {money(calculation.targetTurnover)}
                     </span>
                   </div>

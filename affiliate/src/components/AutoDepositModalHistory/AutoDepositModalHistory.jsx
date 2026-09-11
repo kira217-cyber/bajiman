@@ -459,7 +459,7 @@ const AutoDepositModalHistory = ({ onBackToDeposit }) => {
                         className="mt-1 font-bold"
                         style={{ color: colors.normalText }}
                       >
-                        x{item?.calc?.turnoverMultiplier || 1}
+                        x{item?.calc?.turnoverMultiplier ?? 1}
                       </p>
                     </div>
                   </div>
@@ -493,7 +493,7 @@ const AutoDepositModalHistory = ({ onBackToDeposit }) => {
                             className="text-[11px]"
                             style={{ color: colors.mutedText }}
                           >
-                            x{item?.selectedBonus?.turnoverMultiplier || 1}
+                            x{item?.selectedBonus?.turnoverMultiplier ?? 1}
                           </p>
 
                           <p
