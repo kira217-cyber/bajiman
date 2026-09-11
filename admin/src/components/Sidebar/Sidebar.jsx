@@ -29,7 +29,6 @@ import {
   FaGift,
   FaLink,
   FaDownload,
-  FaFilter,
   FaKey,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
@@ -184,16 +183,16 @@ const Sidebar = () => {
         text: "Bonus & Turnover",
       },
       {
-        key: "turnover-provider-setting",
-        to: "/turnover-provider-setting",
-        icon: <FaFilter />,
-        text: "Turnover Providers",
-      },
-      {
         key: "otp-setting",
         to: "/otp-setting",
         icon: <FaKey />,
         text: "OTP Setting",
+      },
+      {
+        key: "register-bonus-campaign",
+        to: "/register-bonus-campaign",
+        icon: <FaGift />,
+        text: "Register Bonus",
       },
       {
         key: "manual-deposit",

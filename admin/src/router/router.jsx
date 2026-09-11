@@ -20,8 +20,8 @@ import AffWithdrawRequestDetails from "../pages/AffWithdrawRequestDetails/AffWit
 import AddDepositMethod from "../pages/AddDepositMethod/AddDepositMethod";
 import AddDepositField from "../pages/AddDepositField/AddDepositField";
 import AddDepositBonusTurnover from "../pages/AddDepositBonusTurnover/AddDepositBonusTurnover";
-import TurnoverProviderSetting from "../pages/TurnoverProviderSetting/TurnoverProviderSetting";
 import OtpSetting from "../pages/OtpSetting/OtpSetting";
+import RegisterBonusCampaign from "../pages/RegisterBonusCampaign/RegisterBonusCampaign";
 import ManualDeposit from "../pages/ManualDeposit/ManualDeposit";
 import DepositRequests from "../pages/DepositRequests/DepositRequests";
 import DepositRequestDetails from "../pages/DepositRequestDetails/DepositRequestDetails";
@@ -213,18 +213,18 @@ export const routes = createBrowserRouter([
         ),
       },
       {
-        path: "turnover-provider-setting",
-        element: (
-          <PrivateRoute permKey="turnover-provider-setting">
-            <TurnoverProviderSetting />
-          </PrivateRoute>
-        ),
-      },
-      {
         path: "otp-setting",
         element: (
           <PrivateRoute permKey="otp-setting">
             <OtpSetting />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "register-bonus-campaign",
+        element: (
+          <PrivateRoute permKey="register-bonus-campaign">
+            <RegisterBonusCampaign />
           </PrivateRoute>
         ),
       },
