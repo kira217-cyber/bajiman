@@ -19,6 +19,43 @@ import {
 
 const router = express.Router();
 
+// Public winner list must not expose real usernames — shows a stable
+// pseudo-random display name (same winner always gets the same name, so
+// it doesn't flicker across refreshes/pagination) plus the last 4 digits
+// of their registered phone, e.g. "Rahim ****4521".
+const WINNER_DISPLAY_NAME_POOL = [
+  "Rahim", "Karim", "Jamal", "Kamal", "Rafiq", "Shakil", "Nasir", "Habib",
+  "Anis", "Faruk", "Mizan", "Sohel", "Rubel", "Jewel", "Milon", "Babul",
+  "Hasan", "Hossain", "Alamin", "Shamim", "Rakib", "Riyad", "Tanvir",
+  "Sagor", "Emon", "Rana", "Rony", "Tuhin", "Rafi", "Nayan", "Sultana",
+  "Nasrin", "Rina", "Shirin", "Moushumi", "Nazma", "Ruma", "Shathi",
+  "Poly", "Munni",
+];
+
+const hashSeedToIndex = (seed, length) => {
+  const str = String(seed || "");
+  let hash = 0;
+
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+
+  return hash % length;
+};
+
+const buildWinnerDisplayName = (userId, phone) => {
+  const name =
+    WINNER_DISPLAY_NAME_POOL[
+      hashSeedToIndex(userId, WINNER_DISPLAY_NAME_POOL.length)
+    ];
+
+  const last4 = String(phone || "")
+    .replace(/\D/g, "")
+    .slice(-4);
+
+  return last4 ? `${name} ****${last4}` : name;
+};
+
 /* ======================================================
    OPTIONAL AUTH
    Wheel listing/details/winners must be visible to guests too.
@@ -424,7 +461,7 @@ router.get("/wheels/winners", async (req, res) => {
     })
       .populate({
         path: "user",
-        select: "username",
+        select: "phone",
       })
       .populate({
         path: "wheel",
@@ -440,7 +477,7 @@ router.get("/wheels/winners", async (req, res) => {
     const formattedWinners = winners.map((item) => ({
       _id: item._id,
 
-      username: item.user?.username || "User",
+      username: buildWinnerDisplayName(item.user?._id, item.user?.phone),
 
       wheel: item.wheel || null,
 
