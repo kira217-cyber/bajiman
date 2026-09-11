@@ -7,6 +7,7 @@ import {
   Search,
   X,
   CheckCircle,
+  PartyPopper,
 } from "lucide-react";
 import { useLocation } from "react-router";
 import { useLanguage } from "../../Context/LanguageProvider";
@@ -19,6 +20,7 @@ import api from "../../api/axios";
 import { setCredentials } from "../../features/auth/authSlice";
 import { selectRegisterModalSetting } from "../../features/global/globalSelectors";
 import useOtpSetting from "../../hook/useOtpSetting";
+import SuccessConfirmModal from "../SuccessConfirmModal/SuccessConfirmModal";
 
 import slide1 from "../../assets/register/1.jpg";
 import slide2 from "../../assets/register/2.jpg";
@@ -129,6 +131,9 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
   const [countryOpen, setCountryOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const [showBonusCongrats, setShowBonusCongrats] = useState(false);
+  const [bonusAmountWon, setBonusAmountWon] = useState(0);
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -223,6 +228,12 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
     enterPhone: isBangla ? "ফোন নম্বর দিন" : "Enter phone number",
     phoneLength: isBangla ? "সঠিক ফোন নম্বর দিন" : "Enter a valid phone number",
     success: isBangla ? "রেজিস্ট্রেশন সফল হয়েছে" : "Registration successful",
+    congratsTitle: isBangla ? "অভিনন্দন!" : "Congratulations!",
+    congratsButton: isBangla ? "ঠিক আছে" : "OK",
+    congratsDesc: (amount) =>
+      isBangla
+        ? `আপনি রেজিস্ট্রেশন বোনাস হিসেবে ৳${amount} পেয়েছেন! বোনাসটি আপনার ব্যালেন্সে যোগ হয়ে গেছে।`
+        : `You've received a ৳${amount} registration bonus! It's already been added to your balance.`,
   };
 
   const resetOtp = () => {
@@ -489,6 +500,13 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
       }
 
       toast.success(res?.message || text.success);
+
+      const bonus = res?.data?.registerBonus;
+      if (bonus?.bonusAmount > 0) {
+        setBonusAmountWon(bonus.bonusAmount);
+        setShowBonusCongrats(true);
+      }
+
       handleClose();
 
       setTimeout(() => {
@@ -585,6 +603,7 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
   };
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <div
@@ -1096,6 +1115,24 @@ const RegisterModal = ({ open, onClose, onLoginClick }) => {
         </div>
       )}
     </AnimatePresence>
+
+      <SuccessConfirmModal
+        open={showBonusCongrats}
+        icon={PartyPopper}
+        title={text.congratsTitle}
+        description={text.congratsDesc(bonusAmountWon)}
+        buttonText={text.congratsButton}
+        onButtonClick={() => setShowBonusCongrats(false)}
+        colors={{
+          successBg: setting.buttonBg,
+          successText: setting.buttonText,
+          modalBg: setting.modalBg,
+          primaryBg: setting.buttonBg,
+          primaryText: setting.buttonText,
+          mutedText: setting.footerText,
+        }}
+      />
+    </>
   );
 };
 

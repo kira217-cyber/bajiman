@@ -2,6 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import TurnOver from "../models/TurnOver.js";
 import generateToken from "../utils/generateToken.js";
 import { successResponse, errorResponse } from "../utils/response.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
@@ -11,6 +12,7 @@ import {
   clearRegisterOtp,
 } from "./forgotPasswordRoutes.js";
 import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
+import { getActiveRegisterBonusCampaign } from "./registerBonusCampaignRoutes.js";
 
 const router = express.Router();
 
@@ -276,6 +278,41 @@ router.post("/register", async (req, res) => {
       );
     }
 
+    let registerBonusApplied = null;
+    const activeBonusCampaign = await getActiveRegisterBonusCampaign();
+
+    if (activeBonusCampaign) {
+      const bonusAmount = Number(activeBonusCampaign.bonusAmount || 0);
+      const targetTurnover =
+        bonusAmount * Number(activeBonusCampaign.turnoverMultiplier ?? 1);
+
+      await User.updateOne(
+        { _id: user._id },
+        { $inc: { balance: bonusAmount } },
+      );
+
+      user.balance = Number(user.balance || 0) + bonusAmount;
+
+      if (targetTurnover > 0) {
+        await TurnOver.create({
+          user: user._id,
+          sourceType: "register-bonus",
+          sourceId: activeBonusCampaign._id,
+          required: targetTurnover,
+          progress: 0,
+          status: "running",
+          creditedAmount: bonusAmount,
+          eligibleProviders: activeBonusCampaign.eligibleProviders || [],
+        });
+      }
+
+      registerBonusApplied = {
+        campaignId: activeBonusCampaign._id,
+        bonusAmount,
+        targetTurnover,
+      };
+    }
+
     clearRegisterOtp({
       countryCode: finalCountryCode,
       phone: finalPhone,
@@ -302,6 +339,7 @@ router.post("/register", async (req, res) => {
               referCommissionAmount,
             }
           : null,
+        registerBonus: registerBonusApplied,
       },
       201,
     );
