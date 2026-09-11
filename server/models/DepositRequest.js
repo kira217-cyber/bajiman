@@ -77,6 +77,20 @@ const DepositRequestSchema = new mongoose.Schema(
       targetTurnover: { type: Number, default: 0 },
       creditedAmount: { type: Number, default: 0 },
 
+      // Snapshotted eligible-provider config (promo override or the
+      // deposit method's default) at submission time — copied onto the
+      // TurnOver doc when this request is approved.
+      eligibleProviders: {
+        type: [
+          {
+            _id: false,
+            providerCode: { type: String, uppercase: true, trim: true },
+            percent: { type: Number, default: 100, min: 0, max: 100 },
+          },
+        ],
+        default: [],
+      },
+
       affiliateDepositCommission: {
         type: AffiliateDepositCommissionSchema,
         default: () => ({

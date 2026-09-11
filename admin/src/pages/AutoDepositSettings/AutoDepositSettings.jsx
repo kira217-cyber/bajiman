@@ -18,6 +18,8 @@ import {
   FaBullseye,
 } from "react-icons/fa";
 import { FaEye, FaEyeSlash } from "react-icons/fa6";
+import EligibleProvidersPicker from "../../components/EligibleProvidersPicker/EligibleProvidersPicker";
+import { sumEligibleProvidersPercent } from "../../components/EligibleProvidersPicker/eligibleProvidersUtils";
 
 const emptyBonus = () => ({
   _id: `${Date.now()}-${Math.random()}`,
@@ -28,6 +30,7 @@ const emptyBonus = () => ({
   turnoverMultiplier: 1,
   isActive: true,
   order: 0,
+  eligibleProviders: [],
 });
 
 const cardClass =
@@ -88,9 +91,12 @@ const AutoDepositSettings = () => {
                   ? "first-deposit"
                   : "all-time",
               bonusValue: Number(item?.bonusValue || 0),
-              turnoverMultiplier: Number(item?.turnoverMultiplier || 1),
+              turnoverMultiplier: Number(item?.turnoverMultiplier ?? 1),
               isActive: item?.isActive !== false,
               order: Number(item?.order ?? idx),
+              eligibleProviders: Array.isArray(item?.eligibleProviders)
+                ? item.eligibleProviders
+                : [],
             }))
           : [],
       );
@@ -179,11 +185,19 @@ const AutoDepositSettings = () => {
         turnoverMultiplier: Math.max(0, Number(item?.turnoverMultiplier || 0)),
         isActive: item?.isActive !== false,
         order: idx,
+        eligibleProviders: item?.eligibleProviders || [],
       }));
 
       for (const item of sanitizedBonuses) {
         if (!item.title.bn || !item.title.en) {
           toast.error("Every bonus needs Bangla and English title");
+          return;
+        }
+
+        if (sumEligibleProvidersPercent(item.eligibleProviders) > 100) {
+          toast.error(
+            `Bonus "${item.title.bn}" eligible providers percent যোগফল ১০০%-এর বেশি হতে পারবে না`,
+          );
           return;
         }
       }
@@ -521,6 +535,19 @@ const AutoDepositSettings = () => {
                             )
                           }
                           className={`${inputClass} mt-2`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-5">
+                      <label className={labelClass}>Eligible Providers</label>
+                      <div className="mt-2">
+                        <EligibleProvidersPicker
+                          value={item.eligibleProviders || []}
+                          onChange={(next) =>
+                            updateBonus(item._id, "eligibleProviders", next)
+                          }
+                          compact
                         />
                       </div>
                     </div>

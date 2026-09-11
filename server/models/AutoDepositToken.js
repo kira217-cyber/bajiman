@@ -2,6 +2,28 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
+// Each provider's percent is a dedicated minimum share of the turnover
+// this bonus generates (not a wager-value multiplier) — see
+// server/routes/callbackRoutes.js applyTurnoverProgress. Empty array =
+// unrestricted (any provider counts in full).
+const EligibleProviderSchema = new Schema(
+  {
+    providerCode: {
+      type: String,
+      required: true,
+      trim: true,
+      uppercase: true,
+    },
+    percent: {
+      type: Number,
+      default: 100,
+      min: 0,
+      max: 100,
+    },
+  },
+  { _id: false },
+);
+
 const BonusSchema = new Schema(
   {
     title: {
@@ -53,6 +75,11 @@ const BonusSchema = new Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+
+    eligibleProviders: {
+      type: [EligibleProviderSchema],
+      default: [],
     },
   },
   { _id: true },

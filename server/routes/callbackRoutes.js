@@ -2,7 +2,6 @@ import express from "express";
 import User from "../models/User.js";
 import TurnOver from "../models/TurnOver.js";
 import GameHistory from "../models/GameHistory.js";
-import TurnoverProviderSetting from "../models/TurnoverProviderSetting.js";
 import { resolveProviderCodeFromCatalog } from "../utils/gameProviderCatalog.js";
 
 const router = express.Router();
@@ -34,53 +33,40 @@ const cleanMemberAccount = (value = "") => {
 };
 
 /* ----------------------------- TURNOVER PROGRESS -----------------------------
-   Empty eligible-provider list = fully unrestricted (any provider counts
-   1:1, unchanged legacy behavior). Once an admin configures the list, each
-   provider's percent is a MANDATORY MINIMUM SHARE of every turnover's
+   Provider eligibility is decided PER TURNOVER, not site-wide — each
+   TurnOver doc carries its own eligibleProviders, snapshotted at creation
+   time from whichever deposit/bonus config generated it (manual deposit's
+   DepositBonusTurnover, auto deposit's AutoDepositToken bonus, or a
+   register bonus campaign). Empty = fully unrestricted for that turnover
+   (any provider counts 1:1). Once a turnover has a non-empty list, each
+   provider's percent is a MANDATORY MINIMUM SHARE of that turnover's
    required amount — e.g. 50%+50% across two providers splits the whole
    requirement into two dedicated caps, so wagering only on one provider
    can never finish it. Any leftover percent (100 - sum of configured
    percents) is an open pool any provider (including eligible ones, once
    their own cap is full) can fill. If the configured percents sum to
    100, there's no open pool and a non-eligible provider's wager counts
-   for nothing. */
+   for nothing on that turnover. */
 const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
   const amt = money(wagerAmount);
   if (amt <= 0) return false;
-
-  const setting = await TurnoverProviderSetting.findOne()
-    .select("eligibleProviders")
-    .lean();
-
-  const eligible = setting?.eligibleProviders || [];
-
-  const providerCode = eligible.length
-    ? await resolveProviderCodeFromCatalog(gameUId)
-    : null;
-
-  const match = providerCode
-    ? eligible.find(
-        (item) => String(item.providerCode).toUpperCase() === providerCode,
-      )
-    : null;
-
-  const sumPercent = eligible.length
-    ? Math.min(
-        100,
-        eligible.reduce((sum, item) => sum + Number(item.percent || 0), 0),
-      )
-    : 0;
-
-  const openPercent = eligible.length ? Math.max(0, 100 - sumPercent) : 100;
-
-  // Restricted setup, this provider isn't eligible, and there's no open
-  // pool to fall back on — the wager can't contribute to anything.
-  if (eligible.length && !match && openPercent <= 0) return false;
 
   const turnovers = await TurnOver.find({
     user: userId,
     status: "running",
   }).sort({ createdAt: 1 });
+
+  if (!turnovers.length) return false;
+
+  // Only bother resolving the wagered game's provider (a catalog lookup)
+  // if at least one running turnover actually restricts by provider.
+  const anyRestricted = turnovers.some(
+    (t) => Array.isArray(t.eligibleProviders) && t.eligibleProviders.length,
+  );
+
+  const providerCode = anyRestricted
+    ? await resolveProviderCodeFromCatalog(gameUId)
+    : null;
 
   let remaining = amt;
   let applied = false;
@@ -106,11 +92,34 @@ const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
       continue;
     }
 
+    const eligible = Array.isArray(turnover.eligibleProviders)
+      ? turnover.eligibleProviders
+      : [];
+
+    const match =
+      eligible.length && providerCode
+        ? eligible.find(
+            (item) => String(item.providerCode).toUpperCase() === providerCode,
+          )
+        : null;
+
+    const sumPercent = eligible.length
+      ? Math.min(
+          100,
+          eligible.reduce((sum, item) => sum + Number(item.percent || 0), 0),
+        )
+      : 0;
+
+    const openPercent = eligible.length ? Math.max(0, 100 - sumPercent) : 100;
+
     let dedicatedAdd = 0;
     let openAdd = 0;
 
     if (!eligible.length) {
       openAdd = money(Math.min(left, remaining));
+    } else if (!match && openPercent <= 0) {
+      // Restricted, this provider isn't eligible, and there's no open
+      // pool to fall back on — nothing to contribute to THIS turnover.
     } else {
       const providerProgressList = turnover.providerProgress || [];
       const sumProviderProgress = money(

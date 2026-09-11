@@ -43,6 +43,16 @@ const getChannelPercent = (channel = {}) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+// A promo with its own non-empty eligibleProviders overrides the deposit
+// method's default; otherwise the promo just inherits the default (an
+// empty promo list is not treated as "explicitly unrestricted", so
+// forgetting to set it on a promo can't silently bypass the method's
+// restriction).
+const resolveEligibleProviders = ({ config, promo }) => {
+  if (promo?.eligibleProviders?.length) return promo.eligibleProviders;
+  return Array.isArray(config?.eligibleProviders) ? config.eligibleProviders : [];
+};
+
 const normalizePromoScope = (value) =>
   value === "first-deposit" ? "first-deposit" : "all-time";
 
@@ -214,11 +224,12 @@ router.post("/", protectUser, async (req, res) => {
 
     const turnoverMultiplier =
       promo && promoId !== "none"
-        ? n(promo?.turnoverMultiplier) || 1
-        : n(config?.turnoverMultiplier) || 1;
+        ? n(promo?.turnoverMultiplier ?? 1)
+        : n(config?.turnoverMultiplier ?? 1);
 
     const creditedAmount = amountNum + totalBonus;
     const targetTurnover = creditedAmount * turnoverMultiplier;
+    const eligibleProviders = resolveEligibleProviders({ config, promo });
 
     const activeContacts = Array.isArray(method.contacts)
       ? method.contacts
@@ -249,6 +260,7 @@ router.post("/", protectUser, async (req, res) => {
         turnoverMultiplier,
         targetTurnover,
         creditedAmount,
+        eligibleProviders,
         affiliateDepositCommission,
       },
 
@@ -524,6 +536,7 @@ router.post("/admin/:id/approve", protectAdmin, async (req, res) => {
           progress: 0,
           status: "running",
           creditedAmount,
+          eligibleProviders: approvedDoc.calc?.eligibleProviders || [],
         },
         {
           upsert: true,

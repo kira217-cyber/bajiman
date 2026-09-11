@@ -19,6 +19,24 @@ let inflight = null;
 
 const cleanBaseUrl = (url = "") => String(url || "").trim().replace(/\/+$/, "");
 
+// A game can carry its provider info two ways depending on which master
+// endpoint it came from: a flat `provider.providerCode` (client/game-list,
+// client/game-data's `games`), or nested one level under `.game` (hot/
+// popular game entries from client/game-data, which wrap the underlying
+// game record). Checks both so hot/popular games resolve too.
+const addGamesToMap = (map, games) => {
+  (Array.isArray(games) ? games : []).forEach((item) => {
+    const uid = String(item?.gameUId || item?.game?.gameUId || "").trim();
+    const code = String(
+      item?.provider?.providerCode || item?.game?.provider?.providerCode || "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (uid && code) map.set(uid, code);
+  });
+};
+
 const fetchFullCatalogMap = async () => {
   const setting = await GameApiKeySetting.findOne()
     .sort({ createdAt: -1 })
@@ -31,6 +49,11 @@ const fetchFullCatalogMap = async () => {
   const baseUrl = cleanBaseUrl(process.env.MASTER_API_URL);
   if (!baseUrl) throw new Error("MASTER_API_URL is missing in .env");
 
+  const headers = {
+    "x-api-key": setting.apiKey,
+    "Content-Type": "application/json",
+  };
+
   const map = new Map();
   let page = 1;
   let totalPages = 1;
@@ -38,31 +61,35 @@ const fetchFullCatalogMap = async () => {
   do {
     const response = await axios.get(
       `${baseUrl}/api/master/cx-global/client/game-list`,
-      {
-        timeout: 30000,
-        headers: {
-          "x-api-key": setting.apiKey,
-          "Content-Type": "application/json",
-        },
-        params: { page, limit: FETCH_LIMIT },
-      },
+      { timeout: 30000, headers, params: { page, limit: FETCH_LIMIT } },
     );
 
     const data = response?.data?.data || {};
-    const games = Array.isArray(data.games) ? data.games : [];
-
-    games.forEach((game) => {
-      const uid = String(game?.gameUId || "").trim();
-      const code = String(game?.provider?.providerCode || "")
-        .trim()
-        .toUpperCase();
-
-      if (uid && code) map.set(uid, code);
-    });
+    addGamesToMap(map, data.games);
 
     totalPages = Number(data?.meta?.totalPages || 1) || 1;
     page += 1;
   } while (page <= totalPages);
+
+  // client/game-list is the primary (full-catalog) source above, but hot/
+  // popular games shown on the homepage come from a separate endpoint —
+  // merge those in too as a safety net against any sync lag between the
+  // two master endpoints, since that's exactly where users actually click
+  // to play from.
+  try {
+    const gameDataResponse = await axios.get(
+      `${baseUrl}/api/master/cx-global/client/game-data`,
+      { timeout: 30000, headers },
+    );
+
+    const gameData = gameDataResponse?.data?.data || {};
+    addGamesToMap(map, gameData.games);
+    addGamesToMap(map, gameData.hotGames);
+    addGamesToMap(map, gameData.popularGames);
+  } catch {
+    // Non-fatal — the game-list pass above already covers the full
+    // catalog in the common case.
+  }
 
   return map;
 };

@@ -45,6 +45,13 @@ const getChannelPercent = (channel = {}) => {
 const normalizePromoScope = (value) =>
   value === "first-deposit" ? "first-deposit" : "all-time";
 
+// A promo with its own non-empty eligibleProviders overrides the deposit
+// method's default; otherwise the promo just inherits the default.
+const resolveEligibleProviders = ({ config, promo }) => {
+  if (promo?.eligibleProviders?.length) return promo.eligibleProviders;
+  return Array.isArray(config?.eligibleProviders) ? config.eligibleProviders : [];
+};
+
 const getAffiliateDepositCommission = async ({ user, amount }) => {
   if (!user?.referredBy) {
     return {
@@ -137,7 +144,7 @@ router.get("/options", protectAdmin, async (req, res) => {
 
       return {
         ...method,
-        turnoverMultiplier: n(config.turnoverMultiplier) || 1,
+        turnoverMultiplier: n(config.turnoverMultiplier ?? 1),
         channels: Array.isArray(config.channels) ? config.channels : [],
         promotions: Array.isArray(config.promotions) ? config.promotions : [],
       };
@@ -267,11 +274,12 @@ router.post("/credit", protectAdmin, async (req, res) => {
 
     const turnoverMultiplier =
       promo && promoId !== "none"
-        ? n(promo?.turnoverMultiplier) || 1
-        : n(config?.turnoverMultiplier) || 1;
+        ? n(promo?.turnoverMultiplier ?? 1)
+        : n(config?.turnoverMultiplier ?? 1);
 
     const creditedAmount = amountNum + totalBonus;
     const targetTurnover = creditedAmount * turnoverMultiplier;
+    const eligibleProviders = resolveEligibleProviders({ config, promo });
 
     const activeContacts = Array.isArray(method.contacts)
       ? method.contacts
@@ -307,6 +315,7 @@ router.post("/credit", protectAdmin, async (req, res) => {
         turnoverMultiplier,
         targetTurnover,
         creditedAmount,
+        eligibleProviders,
         affiliateDepositCommission,
       },
 
@@ -370,6 +379,7 @@ router.post("/credit", protectAdmin, async (req, res) => {
             progress: 0,
             status: "running",
             creditedAmount,
+            eligibleProviders,
           },
           {
             upsert: true,

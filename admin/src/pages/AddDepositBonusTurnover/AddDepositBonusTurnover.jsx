@@ -10,6 +10,8 @@ import {
   FaImage,
 } from "react-icons/fa";
 import { api } from "../../api/axios";
+import EligibleProvidersPicker from "../../components/EligibleProvidersPicker/EligibleProvidersPicker";
+import { sumEligibleProvidersPercent } from "../../components/EligibleProvidersPicker/eligibleProvidersUtils";
 
 const emptyBi = { bn: "", en: "" };
 
@@ -31,6 +33,7 @@ const defaultPromotion = () => ({
   bonusScope: "all-time",
   isActive: true,
   sort: 0,
+  eligibleProviders: [],
 });
 
 const sectionCard =
@@ -99,6 +102,7 @@ const AddDepositBonusTurnover = () => {
 
   const [selectedMethodId, setSelectedMethodId] = useState("");
   const [turnoverMultiplier, setTurnoverMultiplier] = useState(1);
+  const [eligibleProviders, setEligibleProviders] = useState([]);
   const [channels, setChannels] = useState([defaultChannel()]);
   const [promotions, setPromotions] = useState([defaultPromotion()]);
   const [saving, setSaving] = useState(false);
@@ -142,6 +146,7 @@ const AddDepositBonusTurnover = () => {
 
     if (!selectedMethodId) {
       setTurnoverMultiplier(1);
+      setEligibleProviders([]);
       setChannels([defaultChannel()]);
       setPromotions([defaultPromotion()]);
       return;
@@ -149,15 +154,26 @@ const AddDepositBonusTurnover = () => {
 
     if (!data) {
       setTurnoverMultiplier(1);
+      setEligibleProviders([]);
       setChannels([defaultChannel()]);
       setPromotions([defaultPromotion()]);
       return;
     }
 
-    setTurnoverMultiplier(Number(data.turnoverMultiplier || 1));
+    setTurnoverMultiplier(Number(data.turnoverMultiplier ?? 1));
+    setEligibleProviders(
+      Array.isArray(data.eligibleProviders) ? data.eligibleProviders : [],
+    );
     setChannels(data.channels?.length ? data.channels : [defaultChannel()]);
     setPromotions(
-      data.promotions?.length ? data.promotions : [defaultPromotion()],
+      data.promotions?.length
+        ? data.promotions.map((item) => ({
+            ...item,
+            eligibleProviders: Array.isArray(item.eligibleProviders)
+              ? item.eligibleProviders
+              : [],
+          }))
+        : [defaultPromotion()],
     );
   }, [bonusRes, selectedMethodId]);
 
@@ -212,6 +228,10 @@ const AddDepositBonusTurnover = () => {
       return "Default turnover multiplier 0 এর কম হতে পারবে না";
     }
 
+    if (sumEligibleProvidersPercent(eligibleProviders) > 100) {
+      return "Default eligible providers এর percent যোগফল ১০০%-এর বেশি হতে পারবে না";
+    }
+
     if (!channels.length) return "কমপক্ষে ১টা channel লাগবে";
 
     const channelIds = new Set();
@@ -260,6 +280,10 @@ const AddDepositBonusTurnover = () => {
       if (Number(promo.turnoverMultiplier || 0) < 0) {
         return `Promotion "${id}" এর turnover multiplier 0 এর কম হতে পারবে না`;
       }
+
+      if (sumEligibleProvidersPercent(promo.eligibleProviders) > 100) {
+        return `Promotion "${id}" এর eligible providers percent যোগফল ১০০%-এর বেশি হতে পারবে না`;
+      }
     }
 
     return null;
@@ -278,7 +302,8 @@ const AddDepositBonusTurnover = () => {
 
       const payload = {
         depositMethod: selectedMethodId,
-        turnoverMultiplier: Number(turnoverMultiplier || 1),
+        turnoverMultiplier: Number(turnoverMultiplier ?? 1),
+        eligibleProviders,
 
         channels: channels.map((item, index) => ({
           id: String(item.id || `channel-${index + 1}`).trim(),
@@ -298,13 +323,14 @@ const AddDepositBonusTurnover = () => {
             name: item.name || { bn: "", en: "" },
             bonusType: item.bonusType === "percent" ? "percent" : "fixed",
             bonusValue: Number(item.bonusValue || 0),
-            turnoverMultiplier: Number(item.turnoverMultiplier || 1),
+            turnoverMultiplier: Number(item.turnoverMultiplier ?? 1),
             bonusScope:
               item.bonusScope === "first-deposit"
                 ? "first-deposit"
                 : "all-time",
             isActive: item.isActive !== false,
             sort: Number(item.sort ?? index),
+            eligibleProviders: item.eligibleProviders || [],
           })),
       };
 
@@ -488,6 +514,17 @@ const AddDepositBonusTurnover = () => {
                 </span>
               </p>
             </div>
+          </div>
+
+          <div className="mt-5">
+            <label className={labelCls}>
+              Default Eligible Providers (কোনো promotion select না করলে এটা
+              apply হবে)
+            </label>
+            <EligibleProvidersPicker
+              value={eligibleProviders}
+              onChange={setEligibleProviders}
+            />
           </div>
         </div>
 
@@ -755,7 +792,7 @@ const AddDepositBonusTurnover = () => {
                         min="0"
                         step="0.01"
                         className={inputBase}
-                        value={Number(promo.turnoverMultiplier || 1)}
+                        value={Number(promo.turnoverMultiplier ?? 1)}
                         onChange={(e) =>
                           patchPromotion(
                             idx,
@@ -827,6 +864,20 @@ const AddDepositBonusTurnover = () => {
                         </span>
                       </label>
                     </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <label className={labelCls}>
+                      Eligible Providers (খালি রাখলে default setting inherit
+                      করবে)
+                    </label>
+                    <EligibleProvidersPicker
+                      value={promo.eligibleProviders || []}
+                      onChange={(next) =>
+                        patchPromotion(idx, "eligibleProviders", next)
+                      }
+                      compact
+                    />
                   </div>
                 </div>
               ))}

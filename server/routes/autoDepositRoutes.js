@@ -39,6 +39,24 @@ function safeString(value = "") {
   return String(value || "").trim();
 }
 
+function normalizeEligibleProviders(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => ({
+      providerCode: String(item?.providerCode || "").trim().toUpperCase(),
+      percent: Math.min(100, Math.max(0, Number(item?.percent ?? 100))),
+    }))
+    .filter((item) => item.providerCode);
+}
+
+function sumPercent(list) {
+  return (Array.isArray(list) ? list : []).reduce(
+    (sum, item) => sum + Number(item?.percent || 0),
+    0,
+  );
+}
+
 function defaultAffiliateCommission() {
   return {
     affiliatorId: "",
@@ -58,6 +76,7 @@ function defaultSelectedBonus() {
     bonusValue: 0,
     bonusAmount: 0,
     turnoverMultiplier: 1,
+    eligibleProviders: [],
   };
 }
 
@@ -93,7 +112,7 @@ function computeBonus({ amount, selectedBonus }) {
       : Math.floor(bonusValue);
 
   const turnoverMultiplier = Math.max(
-    Number(selectedBonus?.turnoverMultiplier || 1),
+    Number(selectedBonus?.turnoverMultiplier ?? 1),
     0,
   );
 
@@ -117,6 +136,9 @@ function computeBonus({ amount, selectedBonus }) {
       bonusValue,
       bonusAmount,
       turnoverMultiplier,
+      eligibleProviders: Array.isArray(selectedBonus?.eligibleProviders)
+        ? selectedBonus.eligibleProviders
+        : [],
     },
   };
 }
@@ -149,9 +171,12 @@ router.get("/admin", protectAdmin, async (req, res) => {
                 ? "first-deposit"
                 : "all-time",
             bonusValue: Number(bonus?.bonusValue || 0),
-            turnoverMultiplier: Number(bonus?.turnoverMultiplier || 1),
+            turnoverMultiplier: Number(bonus?.turnoverMultiplier ?? 1),
             isActive: bonus?.isActive !== false,
             order: Number(bonus?.order || 0),
+            eligibleProviders: Array.isArray(bonus?.eligibleProviders)
+              ? bonus.eligibleProviders
+              : [],
           }))
       : [];
 
@@ -232,6 +257,10 @@ router.put("/admin", protectAdmin, async (req, res) => {
 
           isActive: item?.isActive !== false,
           order: Math.max(0, normalizeMoney(item?.order, index)),
+
+          eligibleProviders: normalizeEligibleProviders(
+            item?.eligibleProviders,
+          ),
         }))
         .filter(
           (item) =>
@@ -240,6 +269,15 @@ router.put("/admin", protectAdmin, async (req, res) => {
             Number.isFinite(item.bonusValue) &&
             Number.isFinite(item.turnoverMultiplier),
         );
+
+      for (const item of setting.bonuses) {
+        if (sumPercent(item.eligibleProviders) > 100) {
+          return res.status(400).json({
+            success: false,
+            message: `Bonus "${item.title.bn || item.title.en}" eligible providers' percent adds up to more than 100%`,
+          });
+        }
+      }
     }
 
     await setting.save();
@@ -278,7 +316,7 @@ router.get("/status", async (req, res) => {
                 ? "first-deposit"
                 : "all-time",
             bonusValue: Number(bonus?.bonusValue || 0),
-            turnoverMultiplier: Number(bonus?.turnoverMultiplier || 1),
+            turnoverMultiplier: Number(bonus?.turnoverMultiplier ?? 1),
           }))
       : [];
 
@@ -847,8 +885,8 @@ router.post("/webhook", async (req, res) => {
       depositAmount: Number(calc.depositAmount || 0),
       bonusAmount: Number(calc.bonusAmount || 0),
       creditedAmount: Number(calc.creditedAmount || 0),
-      turnoverMultiplier: Number(calc.turnoverMultiplier || 1),
-      targetTurnover: Number(calc.targetTurnover || 0),
+      turnoverMultiplier: Number(calc.turnoverMultiplier ?? 1),
+      targetTurnover: Number(calc.targetTurnover ?? 0),
       affiliateDepositCommission: prevAffiliateInfo,
     };
 
@@ -863,11 +901,11 @@ router.post("/webhook", async (req, res) => {
     if (user.isActive === false) throw new Error("User is inactive");
 
     const creditedAmount = Number(
-      deposit?.calc?.creditedAmount || deposit.amount || 0,
+      deposit?.calc?.creditedAmount ?? deposit.amount ?? 0,
     );
 
     const targetTurnover = Number(
-      deposit?.calc?.targetTurnover || deposit.amount || 0,
+      deposit?.calc?.targetTurnover ?? deposit.amount ?? 0,
     );
 
     user.balance = Number(user.balance || 0) + creditedAmount;
@@ -913,9 +951,9 @@ router.post("/webhook", async (req, res) => {
       creditedAmount: Number(
         deposit?.calc?.creditedAmount || deposit.amount || 0,
       ),
-      turnoverMultiplier: Number(deposit?.calc?.turnoverMultiplier || 1),
+      turnoverMultiplier: Number(deposit?.calc?.turnoverMultiplier ?? 1),
       targetTurnover: Number(
-        deposit?.calc?.targetTurnover || deposit.amount || 0,
+        deposit?.calc?.targetTurnover ?? deposit.amount ?? 0,
       ),
       affiliateDepositCommission: affiliateCommissionInfo,
     };
@@ -938,6 +976,7 @@ router.post("/webhook", async (req, res) => {
         status: targetTurnover <= 0 ? "completed" : "running",
         creditedAmount,
         completedAt: targetTurnover <= 0 ? new Date() : null,
+        eligibleProviders: deposit?.selectedBonus?.eligibleProviders || [],
       });
     }
 

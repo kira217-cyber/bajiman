@@ -85,6 +85,20 @@ const SelectedBonusSchema = new Schema(
       default: 1,
       min: 0,
     },
+
+    // Snapshotted from the selected AutoDepositToken bonus's
+    // eligibleProviders at deposit-create time — copied onto the TurnOver
+    // doc when the webhook confirms payment.
+    eligibleProviders: {
+      type: [
+        {
+          _id: false,
+          providerCode: { type: String, uppercase: true, trim: true },
+          percent: { type: Number, default: 100, min: 0, max: 100 },
+        },
+      ],
+      default: [],
+    },
   },
   { _id: false },
 );
@@ -215,6 +229,7 @@ const AutoDepositSchema = new Schema(
         bonusValue: 0,
         bonusAmount: 0,
         turnoverMultiplier: 1,
+        eligibleProviders: [],
       }),
     },
 

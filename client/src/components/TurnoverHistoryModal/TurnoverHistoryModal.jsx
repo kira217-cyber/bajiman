@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Target,
   TrendingUp,
-  Gamepad2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-toastify";
@@ -94,11 +93,35 @@ const percent = (progress, required) => {
 
 const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
-// Each eligible provider's percent is a dedicated minimum share of a
-// turnover's required amount (see TurnoverProviderSetting) — build one
-// progress bucket per provider plus, if their percents don't add up to
-// 100, one "open" bucket any provider can fill. Mirrors the exact
-// allocation logic in server/routes/callbackRoutes.js.
+// eligibleProviders is snapshotted per-turnover (from whichever deposit/
+// bonus config generated it — see server/models/TurnOver.js), so each
+// card can have its own restriction. This just attaches display name/
+// icon from the already-loaded live provider catalog.
+const mapEligibleProviders = (rawList, gameProviders) => {
+  const list = Array.isArray(rawList) ? rawList : [];
+
+  return list
+    .map((item) => {
+      const code = String(item?.providerCode || "").toUpperCase();
+      const providerInfo = (
+        Array.isArray(gameProviders) ? gameProviders : []
+      ).find((p) => String(p?.providerCode || "").toUpperCase() === code);
+
+      return {
+        code,
+        percent: Number(item?.percent ?? 100),
+        name: providerInfo?.providerName || code,
+        iconUrl: providerInfo?.providerIconUrl || "",
+      };
+    })
+    .filter((item) => item.code);
+};
+
+// Each eligible provider's percent is a dedicated minimum share of this
+// turnover's required amount — build one progress bucket per provider
+// plus, if their percents don't add up to 100, one "open" bucket any
+// provider can fill. Mirrors the exact allocation logic in
+// server/routes/callbackRoutes.js.
 const buildProviderBreakdown = (item, eligibleProviders, openLabel) => {
   if (!eligibleProviders.length) return [];
 
@@ -189,12 +212,6 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     running: isBangla ? "চলমান" : "Running",
     completed: isBangla ? "সম্পন্ন" : "Completed",
     refresh: isBangla ? "রিফ্রেশ" : "Refresh",
-    eligibleTitle: isBangla
-      ? "টার্নওভার পূরণ করতে যেসব প্রোভাইডার খেলা বাধ্যতামূলক"
-      : "Providers required to complete turnover",
-    eligibleUnrestricted: isBangla
-      ? "এখন যেকোনো প্রোভাইডারের গেম খেললেই টার্নওভার পূরণ হবে"
-      : "Right now, any provider's games count toward turnover",
     openBucket: isBangla ? "অন্য যেকোনো প্রোভাইডার" : "Any other provider",
     providerBreakdown: isBangla
       ? "প্রোভাইডার অনুযায়ী অগ্রগতি"
@@ -219,48 +236,6 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
     keepPreviousData: true,
     staleTime: 15000,
   });
-
-  const { data: eligibleRes } = useQuery({
-    queryKey: ["turnover-eligible-providers"],
-    queryFn: async () => {
-      const res = await api.get("/api/turnover-provider-setting/public");
-      return res.data;
-    },
-    staleTime: 60000,
-  });
-
-  const eligibleProviders = useMemo(() => {
-    const list = Array.isArray(eligibleRes?.data?.eligibleProviders)
-      ? eligibleRes.data.eligibleProviders
-      : [];
-
-    return list
-      .map((item) => {
-        const code = String(item?.providerCode || "").toUpperCase();
-        const providerInfo = (
-          Array.isArray(gameProviders) ? gameProviders : []
-        ).find((p) => String(p?.providerCode || "").toUpperCase() === code);
-
-        return {
-          code,
-          percent: Number(item?.percent ?? 100),
-          name: providerInfo?.providerName || code,
-          iconUrl: providerInfo?.providerIconUrl || "",
-        };
-      })
-      .filter((item) => item.code);
-  }, [eligibleRes, gameProviders]);
-
-  const eligibleOpenPercent = eligibleProviders.length
-    ? Math.max(
-        0,
-        100 -
-          Math.min(
-            100,
-            eligibleProviders.reduce((sum, p) => sum + p.percent, 0),
-          ),
-      )
-    : 0;
 
   const rows = Array.isArray(data?.data) ? data.data : [];
   const meta = data?.meta || {};
@@ -342,95 +317,6 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
       </div>
 
       <div
-        className="shrink-0 px-4 pb-3"
-        style={{ backgroundColor: colors.sectionBg }}
-      >
-        <div
-          className="rounded-[6px] border p-3 shadow-sm"
-          style={{
-            backgroundColor: colors.cardBg,
-            borderColor: colors.cardBorder,
-          }}
-        >
-          <div
-            className="mb-2 flex items-center gap-2 text-[12px] font-bold"
-            style={{ color: colors.summaryText }}
-          >
-            <Gamepad2 size={14} />
-            <span>{t.eligibleTitle}</span>
-          </div>
-
-          {eligibleProviders.length ? (
-            <div className="flex flex-wrap gap-2">
-              {eligibleProviders.map((provider) => (
-                <div
-                  key={provider.code}
-                  className="flex items-center gap-2 rounded-full border px-2 py-1"
-                  style={{
-                    backgroundColor: colors.summaryBg,
-                    borderColor: colors.cardBorder,
-                  }}
-                >
-                  {provider.iconUrl ? (
-                    <img
-                      src={provider.iconUrl}
-                      alt={provider.name}
-                      className="h-5 w-5 shrink-0 rounded object-contain"
-                    />
-                  ) : null}
-
-                  <span
-                    className="text-[11px] font-bold"
-                    style={{ color: colors.normalText }}
-                  >
-                    {provider.name}
-                  </span>
-
-                  <span
-                    className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                    style={{
-                      backgroundColor: colors.progressBg,
-                      color: colors.progressTrackBg,
-                    }}
-                  >
-                    {provider.percent}%
-                  </span>
-                </div>
-              ))}
-
-              {eligibleOpenPercent > 0 ? (
-                <div
-                  className="flex items-center gap-2 rounded-full border border-dashed px-2 py-1"
-                  style={{ borderColor: colors.cardBorder }}
-                >
-                  <span
-                    className="text-[11px] font-bold"
-                    style={{ color: colors.mutedText }}
-                  >
-                    {t.openBucket}
-                  </span>
-
-                  <span
-                    className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                    style={{
-                      backgroundColor: colors.inputBg,
-                      color: colors.mutedText,
-                    }}
-                  >
-                    {eligibleOpenPercent}%
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-[12px]" style={{ color: colors.mutedText }}>
-              {t.eligibleUnrestricted}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div
         className="flex-1 overflow-y-auto px-4 py-4"
         style={{ backgroundColor: colors.sectionBg }}
       >
@@ -449,6 +335,10 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
             {rows.map((item) => {
               const statusInfo = statusBadge(item?.status);
               const progressPercent = percent(item?.progress, item?.required);
+              const itemEligibleProviders = mapEligibleProviders(
+                item?.eligibleProviders,
+                gameProviders,
+              );
 
               return (
                 <div
@@ -597,7 +487,7 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
                     </div>
                   </div>
 
-                  {eligibleProviders.length ? (
+                  {itemEligibleProviders.length ? (
                     <div className="mt-3">
                       <p
                         className="mb-2 text-[11px] font-bold"
@@ -609,7 +499,7 @@ const TurnoverHistoryModal = ({ onBackToDeposit }) => {
                       <div className="space-y-2">
                         {buildProviderBreakdown(
                           item,
-                          eligibleProviders,
+                          itemEligibleProviders,
                           t.openBucket,
                         ).map((bucket) => {
                           const bucketPercent =

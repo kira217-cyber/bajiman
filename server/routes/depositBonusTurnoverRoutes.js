@@ -26,6 +26,24 @@ const normalizeBonusScope = (value = "") => {
     : "all-time";
 };
 
+const normalizeEligibleProviders = (value) => {
+  const list = safeParseJSON(value, []);
+  if (!Array.isArray(list)) return [];
+
+  return list
+    .map((item) => ({
+      providerCode: String(item?.providerCode || "").trim().toUpperCase(),
+      percent: Math.min(100, Math.max(0, Number(item?.percent ?? 100))),
+    }))
+    .filter((item) => item.providerCode);
+};
+
+const sumPercent = (list) =>
+  (Array.isArray(list) ? list : []).reduce(
+    (sum, item) => sum + Number(item?.percent || 0),
+    0,
+  );
+
 /* ---------------- ADMIN GET ALL ---------------- */
 router.get("/", protectAdmin, async (req, res) => {
   try {
@@ -119,23 +137,45 @@ router.post("/", protectAdmin, async (req, res) => {
         name: normalizeTextBi(item?.name || {}),
         bonusType: item?.bonusType === "percent" ? "percent" : "fixed",
         bonusValue: Math.max(0, Number(item?.bonusValue || 0)),
-        turnoverMultiplier: Math.max(0, Number(item?.turnoverMultiplier || 1)),
+        turnoverMultiplier: Math.max(0, Number(item?.turnoverMultiplier ?? 1)),
         bonusScope: normalizeBonusScope(item?.bonusScope),
         isActive: item?.isActive !== false && item?.isActive !== "false",
         sort: Number(item?.sort ?? index),
+        eligibleProviders: normalizeEligibleProviders(item?.eligibleProviders),
       }),
     );
 
     const turnoverMultiplier = Math.max(
       0,
-      Number(body.turnoverMultiplier || 1),
+      Number(body.turnoverMultiplier ?? 1),
     );
+
+    const eligibleProviders = normalizeEligibleProviders(
+      body.eligibleProviders,
+    );
+
+    if (sumPercent(eligibleProviders) > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Default eligible providers' percent adds up to more than 100%",
+      });
+    }
+
+    for (const promo of promotions) {
+      if (sumPercent(promo.eligibleProviders) > 100) {
+        return res.status(400).json({
+          success: false,
+          message: `Promotion "${promo.id}" eligible providers' percent adds up to more than 100%`,
+        });
+      }
+    }
 
     const data = await DepositBonusTurnover.findOneAndUpdate(
       { depositMethod },
       {
         depositMethod,
         turnoverMultiplier,
+        eligibleProviders,
         channels,
         promotions,
       },
