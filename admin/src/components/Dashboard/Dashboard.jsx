@@ -13,6 +13,7 @@ import {
   FaCalendarAlt,
   FaClock,
   FaSyncAlt,
+  FaCalendarDay,
 } from "react-icons/fa";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
@@ -26,11 +27,40 @@ const money = (value) => {
   })}`;
 };
 
+const pad2 = (value) => String(value).padStart(2, "0");
+
+const toDateStr = (date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const emptyTodayCards = {
+  allUsers: 0,
+  activeUsers: 0,
+  allAffiliateUsers: 0,
+  allDepositBalances: 0,
+  pendingDepositRequest: 0,
+  allWithdrawBalances: 0,
+  pendingWithdrawRequest: 0,
+  allGames: 0,
+};
+
 const Dashboard = () => {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
+
+  const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()));
+  const [todayLoading, setTodayLoading] = useState(false);
+  const [todayCards, setTodayCards] = useState(emptyTodayCards);
+
+  // Decoupled from `now` (the live-ticking clock) so browsing the
+  // calendar to another month/year doesn't get reset every second.
+  const [calendarViewYear, setCalendarViewYear] = useState(
+    () => new Date().getFullYear(),
+  );
+  const [calendarViewMonth, setCalendarViewMonth] = useState(
+    () => new Date().getMonth(),
+  );
 
   const [summary, setSummary] = useState({
     cards: {
@@ -83,6 +113,27 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboard();
   }, []);
+
+  const fetchTodaySummary = async (dateStr) => {
+    try {
+      setTodayLoading(true);
+      const res = await api.get("/api/dashboard/today", {
+        params: { date: dateStr },
+      });
+      setTodayCards(res?.data?.data?.cards || emptyTodayCards);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error?.response?.data?.message || "Failed to load today's summary",
+      );
+    } finally {
+      setTodayLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTodaySummary(selectedDate);
+  }, [selectedDate]);
 
   const cards = useMemo(() => {
     const c = summary?.cards || {};
@@ -139,6 +190,27 @@ const Dashboard = () => {
     ];
   }, [summary]);
 
+  // Same 8 metrics as above, scoped to whichever date is selected on the
+  // calendar (defaults to today) — a fresh fetch every date change, since
+  // this is inherently a "figures reset each day" view.
+  const todayCardsList = useMemo(() => {
+    const c = todayCards || {};
+
+    return [
+      { title: "All Users", value: c.allUsers || 0, icon: <FaUsers />, to: "/all-users" },
+      { title: "Active Users", value: c.activeUsers || 0, icon: <FaUserCheck />, to: "/all-users" },
+      { title: "All Affiliate Users", value: c.allAffiliateUsers || 0, icon: <FaUserFriends />, to: "/all-affiliate-users" },
+      { title: "All Deposit Balances", value: money(c.allDepositBalances), icon: <FaArrowCircleDown />, to: "/auto-deposit-history" },
+      { title: "Pending Deposit Request", value: c.pendingDepositRequest || 0, icon: <FaHourglassHalf />, to: "/deposit-requests" },
+      { title: "All Withdraw Balance", value: money(c.allWithdrawBalances), icon: <FaArrowCircleUp />, to: "/withdraw-requests" },
+      { title: "Pending Withdraw Request", value: c.pendingWithdrawRequest || 0, icon: <FaWallet />, to: "/withdraw-requests" },
+      { title: "All Games", value: c.allGames || 0, icon: <FaGamepad />, to: "/add-game" },
+    ];
+  }, [todayCards]);
+
+  const todayStr = toDateStr(new Date());
+  const isSelectedToday = selectedDate === todayStr;
+
   const activeUsers = Number(summary?.chart?.users?.active || 0);
   const inactiveUsers = Number(summary?.chart?.users?.inactive || 0);
   const totalUsersForPie = activeUsers + inactiveUsers;
@@ -174,26 +246,58 @@ const Dashboard = () => {
   }, [summary]);
 
   const calendarData = useMemo(() => {
-    const current = new Date(now);
-    const year = current.getFullYear();
-    const month = current.getMonth();
+    const year = calendarViewYear;
+    const month = calendarViewMonth;
 
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
+    const realToday = new Date();
 
     const days = [];
     for (let i = 0; i < firstDay.getDay(); i++) days.push(null);
-    for (let d = 1; d <= lastDay.getDate(); d++) days.push(d);
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      days.push({ day: d, dateStr: `${year}-${pad2(month + 1)}-${pad2(d)}` });
+    }
+
+    const isCurrentMonth =
+      realToday.getFullYear() === year && realToday.getMonth() === month;
 
     return {
-      monthLabel: current.toLocaleString("en-US", {
+      monthLabel: firstDay.toLocaleString("en-US", {
         month: "long",
         year: "numeric",
       }),
-      today: current.getDate(),
+      today: isCurrentMonth ? realToday.getDate() : null,
       days,
     };
-  }, [now]);
+  }, [calendarViewYear, calendarViewMonth]);
+
+  const goToPrevMonth = () => {
+    setCalendarViewMonth((prev) => {
+      if (prev === 0) {
+        setCalendarViewYear((year) => year - 1);
+        return 11;
+      }
+      return prev - 1;
+    });
+  };
+
+  const goToNextMonth = () => {
+    setCalendarViewMonth((prev) => {
+      if (prev === 11) {
+        setCalendarViewYear((year) => year + 1);
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
+
+  const goToCurrentMonth = () => {
+    const current = new Date();
+    setCalendarViewYear(current.getFullYear());
+    setCalendarViewMonth(current.getMonth());
+    setSelectedDate(toDateStr(current));
+  };
 
   const time = now.toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -269,6 +373,64 @@ const Dashboard = () => {
                 <div className="mt-5 text-xs text-[#6fb5f4]">Click to open</div>
               </button>
             ))}
+          </div>
+
+          <div>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-[#1A79D3]/15 flex items-center justify-center">
+                  <FaCalendarDay className="text-lg text-[#3ea0ff]" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">
+                    {isSelectedToday ? "Today's Summary" : "Selected Day Summary"}
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    {selectedDate}
+                    {isSelectedToday ? " (আজকে)" : ""} — প্রতিদিন নতুন করে হিসাব
+                    হয়
+                  </p>
+                </div>
+              </div>
+
+              {!isSelectedToday ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(todayStr)}
+                  className="cursor-pointer rounded-xl border border-[#1A79D3]/25 bg-[#1A79D3]/10 px-4 py-2 text-sm font-semibold text-[#1A79D3] transition hover:bg-[#1A79D3]/20"
+                >
+                  Back to Today
+                </button>
+              ) : null}
+            </div>
+
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5 transition-opacity ${todayLoading ? "opacity-60" : "opacity-100"}`}
+            >
+              {todayCardsList.map((card) => (
+                <button
+                  key={card.title}
+                  type="button"
+                  onClick={() => navigate(card.to)}
+                  className="cursor-pointer text-left rounded-[28px] border border-[#1A79D3]/15 bg-white p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#1A79D3]/60"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-slate-600 font-medium">
+                        {card.title}
+                      </p>
+                      <h3 className="mt-3 text-xl md:text-2xl font-black text-slate-800 break-words">
+                        {card.value}
+                      </h3>
+                    </div>
+
+                    <div className="w-12 h-12 rounded-2xl bg-[#1A79D3]/10 flex items-center justify-center text-[#1A79D3] text-xl">
+                      {card.icon}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -366,17 +528,72 @@ const Dashboard = () => {
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <div className="xl:col-span-2 rounded-[28px] border border-[#1A79D3]/20 bg-slate-50 p-5 md:p-6 shadow-xl">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-2xl bg-[#1A79D3]/20 flex items-center justify-center">
-                  <FaCalendarAlt className="text-xl text-[#3ea0ff]" />
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#1A79D3]/20 flex items-center justify-center">
+                    <FaCalendarAlt className="text-xl text-[#3ea0ff]" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800">
+                      Calendar
+                    </h2>
+                    <p className="text-sm text-slate-600">
+                      {calendarData.monthLabel}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">
-                    Real Time Calendar
-                  </h2>
-                  <p className="text-sm text-slate-600">
-                    {calendarData.monthLabel}
-                  </p>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goToPrevMonth}
+                    className="cursor-pointer w-9 h-9 rounded-xl border border-[#1A79D3]/25 bg-white text-[#1A79D3] font-bold hover:bg-[#1A79D3]/10 transition"
+                    aria-label="Previous month"
+                  >
+                    ‹
+                  </button>
+
+                  <select
+                    value={calendarViewMonth}
+                    onChange={(e) => setCalendarViewMonth(Number(e.target.value))}
+                    className="cursor-pointer rounded-xl border border-[#1A79D3]/25 bg-white px-2 py-2 text-sm font-semibold text-slate-800"
+                  >
+                    {Array.from({ length: 12 }).map((_, monthIndex) => (
+                      <option key={monthIndex} value={monthIndex}>
+                        {new Date(2000, monthIndex, 1).toLocaleString("en-US", {
+                          month: "long",
+                        })}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="number"
+                    value={calendarViewYear}
+                    onChange={(e) =>
+                      setCalendarViewYear(
+                        Number(e.target.value) || calendarViewYear,
+                      )
+                    }
+                    className="w-24 rounded-xl border border-[#1A79D3]/25 bg-white px-2 py-2 text-sm font-semibold text-slate-800"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={goToNextMonth}
+                    className="cursor-pointer w-9 h-9 rounded-xl border border-[#1A79D3]/25 bg-white text-[#1A79D3] font-bold hover:bg-[#1A79D3]/10 transition"
+                    aria-label="Next month"
+                  >
+                    ›
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={goToCurrentMonth}
+                    className="cursor-pointer rounded-xl border border-[#1A79D3]/25 bg-[#1A79D3]/10 px-3 py-2 text-sm font-semibold text-[#1A79D3] hover:bg-[#1A79D3]/20 transition"
+                  >
+                    Today
+                  </button>
                 </div>
               </div>
 
@@ -394,25 +611,39 @@ const Dashboard = () => {
               </div>
 
               <div className="grid grid-cols-7 gap-2">
-                {calendarData.days.map((day, index) => {
-                  const isToday = day === calendarData.today;
+                {calendarData.days.map((item, index) => {
+                  if (!item) {
+                    return (
+                      <div key={index} className="h-12 sm:h-16 border border-transparent bg-transparent" />
+                    );
+                  }
+
+                  const isToday = item.day === calendarData.today;
+                  const isSelected = item.dateStr === selectedDate;
 
                   return (
-                    <div
+                    <button
                       key={index}
-                      className={`h-12 sm:h-16 rounded-2xl border flex items-center justify-center text-sm md:text-base font-semibold ${
-                        day
-                          ? isToday
-                            ? "border-[#3ea0ff] bg-gradient-to-br from-[#3ea0ff] via-[#1A79D3] to-[#0d5fa8] text-white shadow-[0_0_30px_rgba(26,121,211,0.30)]"
-                            : "border-[#1A79D3]/20 bg-slate-50 text-slate-800"
-                          : "border-transparent bg-transparent"
+                      type="button"
+                      onClick={() => setSelectedDate(item.dateStr)}
+                      className={`h-12 sm:h-16 cursor-pointer rounded-2xl border flex items-center justify-center text-sm md:text-base font-semibold transition ${
+                        isSelected
+                          ? "border-[#3ea0ff] bg-gradient-to-br from-[#3ea0ff] via-[#1A79D3] to-[#0d5fa8] text-white shadow-[0_0_30px_rgba(26,121,211,0.30)]"
+                          : isToday
+                            ? "border-[#3ea0ff]/60 bg-[#1A79D3]/10 text-[#1A79D3]"
+                            : "border-[#1A79D3]/20 bg-slate-50 text-slate-800 hover:border-[#1A79D3]/50"
                       }`}
                     >
-                      {day || ""}
-                    </div>
+                      {item.day}
+                    </button>
                   );
                 })}
               </div>
+
+              <p className="mt-3 text-xs text-slate-500">
+                একটা তারিখে ক্লিক করলে নিচের "Today's Summary" কার্ডগুলো ওই
+                দিনের হিসাব দেখাবে
+              </p>
             </div>
 
             <div className="space-y-6">

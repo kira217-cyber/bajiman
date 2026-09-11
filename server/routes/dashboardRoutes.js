@@ -28,6 +28,36 @@ const sumField = async (Model, match = {}, field = "amount") => {
   return num(result?.[0]?.total);
 };
 
+// Accepts "YYYY-MM-DD" (from the calendar) and returns that day's
+// [start, end] bounds in server-local time; defaults to today when no
+// valid date is given.
+const dayRange = (dateStr) => {
+  const parsed = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
+  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+
+  const start = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+
+  const end = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+
+  return { start, end, dateStr: start.toISOString().slice(0, 10) };
+};
+
 router.get("/summary", protectAdmin, async (req, res) => {
   try {
     const [
@@ -148,6 +178,74 @@ router.get("/summary", protectAdmin, async (req, res) => {
     return errorResponse(
       res,
       error.message || "Failed to load dashboard summary",
+      500,
+    );
+  }
+});
+
+/* Same 8 cards as /summary, but scoped to one calendar day (defaults to
+   today). ?date=YYYY-MM-DD lets the dashboard's calendar re-fetch any
+   past day's figures instead of always showing today's. */
+router.get("/today", protectAdmin, async (req, res) => {
+  try {
+    const { start, end, dateStr } = dayRange(req.query.date);
+    const createdAt = { $gte: start, $lte: end };
+
+    const [
+      allUsers,
+      activeUsers,
+      allAffiliateUsers,
+      allGames,
+      activeGames,
+
+      pendingDepositRequest,
+      approvedManualDepositAmount,
+
+      pendingAutoDepositCount,
+      approvedAutoDepositAmount,
+
+      pendingWithdrawRequest,
+      approvedWithdrawAmount,
+    ] = await Promise.all([
+      User.countDocuments({ role: "user", createdAt }),
+      User.countDocuments({ role: "user", isActive: true, createdAt }),
+      User.countDocuments({ role: "aff-user", createdAt }),
+
+      Game.countDocuments({ createdAt }),
+      Game.countDocuments({ status: "active", createdAt }),
+
+      DepositRequest.countDocuments({ status: "pending", createdAt }),
+      sumField(DepositRequest, { status: "approved", createdAt }, "amount"),
+
+      AutoDeposit.countDocuments({ status: "PENDING", createdAt }),
+      sumField(AutoDeposit, { status: "PAID", createdAt }, "amount"),
+
+      WithdrawRequest.countDocuments({ status: "pending", createdAt }),
+      sumField(WithdrawRequest, { status: "approved", createdAt }, "amount"),
+    ]);
+
+    const allDepositBalances =
+      approvedManualDepositAmount + approvedAutoDepositAmount;
+
+    return successResponse(res, "Dashboard today summary loaded", {
+      date: dateStr,
+      cards: {
+        allUsers,
+        activeUsers,
+        allAffiliateUsers,
+        allDepositBalances,
+        allGames,
+        activeGames,
+        allWithdrawBalances: approvedWithdrawAmount,
+        pendingDepositRequest: pendingDepositRequest + pendingAutoDepositCount,
+        pendingWithdrawRequest,
+      },
+    });
+  } catch (error) {
+    console.error("DASHBOARD TODAY ERROR:", error);
+    return errorResponse(
+      res,
+      error.message || "Failed to load dashboard today summary",
       500,
     );
   }
