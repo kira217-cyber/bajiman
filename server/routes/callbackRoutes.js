@@ -32,21 +32,7 @@ const cleanMemberAccount = (value = "") => {
   return username;
 };
 
-/* ----------------------------- TURNOVER PROGRESS -----------------------------
-   Provider eligibility is decided PER TURNOVER, not site-wide — each
-   TurnOver doc carries its own eligibleProviders, snapshotted at creation
-   time from whichever deposit/bonus config generated it (manual deposit's
-   DepositBonusTurnover, auto deposit's AutoDepositToken bonus, or a
-   register bonus campaign). Empty = fully unrestricted for that turnover
-   (any provider counts 1:1). Once a turnover has a non-empty list, each
-   provider's percent is a MANDATORY MINIMUM SHARE of that turnover's
-   required amount — e.g. 50%+50% across two providers splits the whole
-   requirement into two dedicated caps, so wagering only on one provider
-   can never finish it. Any leftover percent (100 - sum of configured
-   percents) is an open pool any provider (including eligible ones, once
-   their own cap is full) can fill. If the configured percents sum to
-   100, there's no open pool and a non-eligible provider's wager counts
-   for nothing on that turnover. */
+/* ----------------------------- TURNOVER PROGRESS ----------------------------- */
 const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
   const amt = money(wagerAmount);
   if (amt <= 0) return false;
@@ -58,8 +44,6 @@ const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
 
   if (!turnovers.length) return false;
 
-  // Only bother resolving the wagered game's provider (a catalog lookup)
-  // if at least one running turnover actually restricts by provider.
   const anyRestricted = turnovers.some(
     (t) => Array.isArray(t.eligibleProviders) && t.eligibleProviders.length,
   );
@@ -118,8 +102,7 @@ const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
     if (!eligible.length) {
       openAdd = money(Math.min(left, remaining));
     } else if (!match && openPercent <= 0) {
-      // Restricted, this provider isn't eligible, and there's no open
-      // pool to fall back on — nothing to contribute to THIS turnover.
+      // Restricted
     } else {
       const providerProgressList = turnover.providerProgress || [];
       const sumProviderProgress = money(
@@ -182,8 +165,7 @@ const applyTurnoverProgress = async ({ userId, gameUId, wagerAmount }) => {
         await TurnOver.updateOne(
           { _id: turnover._id },
           {
-            $inc: { progress: add },
-            $push: { providerProgress: { providerCode, progress: dedicatedAdd } },
+            $inc: { progress: add },$push: { providerProgress: { providerCode, progress: dedicatedAdd } },
             ...(setFields ? { $set: setFields } : {}),
           },
         );
@@ -461,9 +443,10 @@ router.post("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("GAME CALLBACK ERROR:", error);
-
+    // এখানে পরিবর্তন করা হয়েছে
     if (error?.code === 11000) {
+      // error.log ফাইলে লাল দাগ না ফেলে সাধারণ console.log এ মেসেজ দেওয়া হলো
+      console.log(`[INFO] Duplicate Webhook Ignored for Serial: ${req.body?.serial_number}`);
       return res.status(200).json({
         success: false,
         balance: 0,
@@ -471,7 +454,9 @@ router.post("/", async (req, res) => {
         data: { status: "DUPLICATE" },
       });
     }
-
+    
+    // অন্য কোনো সিরিয়াস এরর হলে তখন error log এ যাবে
+    console.error("GAME CALLBACK ERROR:", error);
     return res.status(200).json({
       success: false,
       balance: 0,
