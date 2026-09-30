@@ -73,6 +73,11 @@ const CreateAdmin = () => {
         path: "/register-bonus-campaign",
       },
       {
+        key: "maintenance-setting",
+        label: "Maintenance Mode",
+        path: "/maintenance-setting",
+      },
+      {
         key: "manual-deposit",
         label: "Manual Deposit",
         path: "/manual-deposit",

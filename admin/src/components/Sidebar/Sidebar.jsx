@@ -30,6 +30,7 @@ import {
   FaLink,
   FaDownload,
   FaKey,
+  FaTools,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
 import {
@@ -193,6 +194,12 @@ const Sidebar = () => {
         to: "/register-bonus-campaign",
         icon: <FaGift />,
         text: "Register Bonus",
+      },
+      {
+        key: "maintenance-setting",
+        to: "/maintenance-setting",
+        icon: <FaTools />,
+        text: "Maintenance Mode",
       },
       {
         key: "manual-deposit",

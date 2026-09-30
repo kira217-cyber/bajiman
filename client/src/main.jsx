@@ -12,6 +12,7 @@ import { store } from "./app/store";
 import { routes } from "./router/router";
 import { LanguageProvider } from "./Context/LanguageProvider";
 import { rehydrateAuth } from "./features/auth/authSlice";
+import MaintenanceGate from "./components/MaintenanceGate/MaintenanceGate";
 
 const queryClient = new QueryClient();
 
@@ -31,24 +32,26 @@ createRoot(document.getElementById("root")).render(
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
           <BootstrapAuth>
-            <RouterProvider router={routes} />
+            <MaintenanceGate site="client">
+              <RouterProvider router={routes} />
 
-            {/* z-index above every modal (highest in use is z-[100020] on
-                SuccessConfirmModal) — otherwise toasts render behind a
-                modal's dark backdrop and never appear. top-center also
-                keeps toasts visually tied to the centered modals instead
-                of a top-right corner unrelated to what's open. */}
-            <ToastContainer
-              position="top-center"
-              autoClose={2200}
-              hideProgressBar={false}
-              newestOnTop
-              closeOnClick
-              pauseOnHover
-              draggable
-              theme="light"
-              style={{ zIndex: 999999 }}
-            />
+              {/* z-index above every modal (highest in use is z-[100020] on
+                  SuccessConfirmModal) — otherwise toasts render behind a
+                  modal's dark backdrop and never appear. top-center also
+                  keeps toasts visually tied to the centered modals instead
+                  of a top-right corner unrelated to what's open. */}
+              <ToastContainer
+                position="top-center"
+                autoClose={2200}
+                hideProgressBar={false}
+                newestOnTop
+                closeOnClick
+                pauseOnHover
+                draggable
+                theme="light"
+                style={{ zIndex: 999999 }}
+              />
+            </MaintenanceGate>
           </BootstrapAuth>
         </LanguageProvider>
       </QueryClientProvider>

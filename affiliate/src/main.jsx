@@ -9,6 +9,7 @@ import { LanguageProvider } from "./Context/LanguageProvider";
 import { routes } from "./router/router";
 import { store } from "./app/store";
 import { rehydrateAuth } from "./features/auth/authSlice";
+import MaintenanceGate from "./components/MaintenanceGate/MaintenanceGate";
 
 const queryClient = new QueryClient();
 
@@ -31,8 +32,10 @@ createRoot(document.getElementById("root")).render(
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
           <BootstrapAuth>
-            <ToastContainer position="top-right" />
-            <RouterProvider router={routes} />
+            <MaintenanceGate site="affiliate">
+              <ToastContainer position="top-right" />
+              <RouterProvider router={routes} />
+            </MaintenanceGate>
           </BootstrapAuth>
         </LanguageProvider>
       </QueryClientProvider>

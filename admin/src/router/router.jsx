@@ -22,6 +22,7 @@ import AddDepositField from "../pages/AddDepositField/AddDepositField";
 import AddDepositBonusTurnover from "../pages/AddDepositBonusTurnover/AddDepositBonusTurnover";
 import OtpSetting from "../pages/OtpSetting/OtpSetting";
 import RegisterBonusCampaign from "../pages/RegisterBonusCampaign/RegisterBonusCampaign";
+import MaintenanceSetting from "../pages/MaintenanceSetting/MaintenanceSetting";
 import ManualDeposit from "../pages/ManualDeposit/ManualDeposit";
 import DepositRequests from "../pages/DepositRequests/DepositRequests";
 import DepositRequestDetails from "../pages/DepositRequestDetails/DepositRequestDetails";
@@ -225,6 +226,14 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="register-bonus-campaign">
             <RegisterBonusCampaign />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "maintenance-setting",
+        element: (
+          <PrivateRoute permKey="maintenance-setting">
+            <MaintenanceSetting />
           </PrivateRoute>
         ),
       },
