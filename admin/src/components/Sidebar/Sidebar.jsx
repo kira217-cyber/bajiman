@@ -118,6 +118,12 @@ const Sidebar = () => {
         end: true,
       },
       {
+        key: "maintenance-setting",
+        to: "/maintenance-setting",
+        icon: <FaTools />,
+        text: "Maintenance Mode",
+      },
+      {
         key: "__mother__",
         to: "/create-admin",
         icon: <GrUserAdmin />,
@@ -196,12 +202,6 @@ const Sidebar = () => {
         text: "Register Bonus",
       },
       {
-        key: "maintenance-setting",
-        to: "/maintenance-setting",
-        icon: <FaTools />,
-        text: "Maintenance Mode",
-      },
-      {
         key: "manual-deposit",
         to: "/manual-deposit",
         icon: <FaMoneyBillWave />,
@@ -248,6 +248,18 @@ const Sidebar = () => {
         to: "/withdraw-requests",
         icon: <FaWallet />,
         text: "Withdraw Requests",
+      },
+      {
+        key: "auto-withdraw-settings",
+        to: "/auto-withdraw-settings",
+        icon: <MdOutlineAccountBalanceWallet />,
+        text: "Auto Withdraw",
+      },
+      {
+        key: "auto-withdraw-history",
+        to: "/auto-withdraw-history",
+        icon: <FaHistory />,
+        text: "Auto Withdraw History",
       },
       {
         key: "add-aff-withdraw-method",
