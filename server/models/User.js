@@ -203,6 +203,14 @@ const userSchema = new Schema(
       default: "",
       trim: true,
     },
+
+    // Short-lived lock shared by manual and auto withdraw (see
+    // utils/withdrawLock.js) so a user can't have two withdraw requests
+    // created at the same moment.
+    withdrawBusyUntil: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );

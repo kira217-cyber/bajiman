@@ -5,10 +5,12 @@ import User from "../models/User.js";
 import TurnOver from "../models/TurnOver.js";
 import WithdrawMethod from "../models/WithdrawMethod.js";
 import EWallet from "../models/EWallet.js";
+import AutoWithdraw from "../models/AutoWithdraw.js";
 import protectUser from "../middleware/protectUser.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
 import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
 import { checkUserOtp, consumeUserOtp } from "./eWalletRoutes.js";
+import { lockWithdraw, unlockWithdraw } from "../utils/withdrawLock.js";
 
 const router = express.Router();
 
@@ -21,67 +23,83 @@ const getUserIdFromReq = (req) => {
 
 const normalizeMethodId = (value) => String(value || "").trim().toUpperCase();
 
+/* Shared by manual withdraw (this file) and auto withdraw
+   (autoWithdrawRoutes.js) — a user can only have one pending withdraw
+   request at a time, regardless of which path it came from. */
+export const checkEligibility = async (userId) => {
+  const pendingManual = await WithdrawRequest.findOne({
+    user: userId,
+    status: "pending",
+  }).sort({ createdAt: -1 });
+
+  if (pendingManual) {
+    return {
+      eligible: false,
+      hasRunningTurnover: false,
+      hasPendingWithdraw: true,
+      pendingWithdrawId: pendingManual._id,
+      remaining: 0,
+      message:
+        "You already have a pending withdraw request. Please wait until it is approved or rejected.",
+    };
+  }
+
+  const pendingAuto = await AutoWithdraw.findOne({
+    user: userId,
+    status: { $in: ["PENDING", "PROCESSING"] },
+  }).sort({ createdAt: -1 });
+
+  if (pendingAuto) {
+    return {
+      eligible: false,
+      hasRunningTurnover: false,
+      hasPendingWithdraw: true,
+      pendingWithdrawId: pendingAuto._id,
+      remaining: 0,
+      message:
+        "You already have a pending auto withdraw request. Please wait until it completes.",
+    };
+  }
+
+  const running = await TurnOver.findOne({
+    user: userId,
+    status: "running",
+  }).sort({ createdAt: 1 });
+
+  if (!running) {
+    return {
+      eligible: true,
+      hasRunningTurnover: false,
+      hasPendingWithdraw: false,
+      remaining: 0,
+      message: "",
+    };
+  }
+
+  const remaining = Math.max(
+    0,
+    Number(running.required || 0) - Number(running.progress || 0),
+  );
+
+  return {
+    eligible: false,
+    hasRunningTurnover: true,
+    hasPendingWithdraw: false,
+    remaining,
+    message:
+      remaining > 0
+        ? `Turnover pending: remaining ${remaining}`
+        : "Turnover pending",
+  };
+};
+
 /* USER: ELIGIBILITY */
 router.get("/withdraw-requests/eligibility", protectUser, async (req, res) => {
   try {
     const userId = getUserIdFromReq(req);
+    const data = await checkEligibility(userId);
 
-    const pendingWithdraw = await WithdrawRequest.findOne({
-      user: userId,
-      status: "pending",
-    }).sort({ createdAt: -1 });
-
-    if (pendingWithdraw) {
-      return res.json({
-        success: true,
-        data: {
-          eligible: false,
-          hasRunningTurnover: false,
-          hasPendingWithdraw: true,
-          pendingWithdrawId: pendingWithdraw._id,
-          remaining: 0,
-          message:
-            "You already have a pending withdraw request. Please wait until it is approved or rejected.",
-        },
-      });
-    }
-
-    const running = await TurnOver.findOne({
-      user: userId,
-      status: "running",
-    }).sort({ createdAt: 1 });
-
-    if (!running) {
-      return res.json({
-        success: true,
-        data: {
-          eligible: true,
-          hasRunningTurnover: false,
-          hasPendingWithdraw: false,
-          remaining: 0,
-          message: "",
-        },
-      });
-    }
-
-    const remaining = Math.max(
-      0,
-      Number(running.required || 0) - Number(running.progress || 0),
-    );
-
-    return res.json({
-      success: true,
-      data: {
-        eligible: false,
-        hasRunningTurnover: true,
-        hasPendingWithdraw: false,
-        remaining,
-        message:
-          remaining > 0
-            ? `Turnover pending: remaining ${remaining}`
-            : "Turnover pending",
-      },
-    });
+    return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -92,8 +110,10 @@ router.get("/withdraw-requests/eligibility", protectUser, async (req, res) => {
 
 /* USER: CREATE WITHDRAW REQUEST */
 router.post("/withdraw-requests", protectUser, async (req, res) => {
+  const userId = getUserIdFromReq(req);
+  let locked = false;
+
   try {
-    const userId = getUserIdFromReq(req);
     const methodId = normalizeMethodId(req.body?.methodId);
     const walletId = String(req.body?.walletId || "").trim();
     const amount = Number(req.body?.amount || 0);
@@ -120,35 +140,26 @@ router.post("/withdraw-requests", protectUser, async (req, res) => {
       });
     }
 
-    const pendingWithdraw = await WithdrawRequest.findOne({
-      user: userId,
-      status: "pending",
-    });
+    const eligibility = await checkEligibility(userId);
 
-    if (pendingWithdraw) {
+    if (!eligibility.eligible) {
       return res.status(409).json({
         success: false,
-        code: "PENDING_WITHDRAW_EXISTS",
-        message:
-          "You already have a pending withdraw request. Please wait until it is approved or rejected.",
+        code: eligibility.hasPendingWithdraw
+          ? "PENDING_WITHDRAW_EXISTS"
+          : "TURNOVER_NOT_FULFILLED",
+        message: eligibility.message,
+        data: { remaining: eligibility.remaining },
       });
     }
 
-    const running = await TurnOver.findOne({
-      user: userId,
-      status: "running",
-    });
+    locked = await lockWithdraw(userId);
 
-    if (running) {
-      const remaining = Math.max(
-        0,
-        Number(running.required || 0) - Number(running.progress || 0),
-      );
-
-      return res.status(403).json({
+    if (!locked) {
+      return res.status(409).json({
         success: false,
-        message: "Turnover not fulfilled. Complete turnover before withdraw.",
-        data: { remaining },
+        message:
+          "আপনার আগের withdraw request টা এখনো process হচ্ছে, কিছুক্ষণ পর আবার চেষ্টা করুন।",
       });
     }
 
@@ -280,6 +291,8 @@ router.post("/withdraw-requests", protectUser, async (req, res) => {
       success: false,
       message: error?.message || "Server error",
     });
+  } finally {
+    if (locked) await unlockWithdraw(userId);
   }
 });
 
