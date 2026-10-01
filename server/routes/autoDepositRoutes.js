@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import axios from "axios";
+import crypto from "crypto";
 
 import AutoDepositToken from "../models/AutoDepositToken.js";
 import AutoDeposit from "../models/AutoDeposit.js";
@@ -148,6 +149,25 @@ function buildPublicUrls() {
     backend: process.env.PUBLIC_BACKEND_URL,
     frontend: process.env.PUBLIC_FRONTEND_URL,
   };
+}
+
+// OraclePay's webhook carries no signature of its own — the old static
+// "/webhook" URL (kept below for payment links generated before this
+// change) can only be matched by invoice_number, which is forgeable if
+// guessed. New payment links instead get a per-invoice key embedded
+// directly in their callback_url, derived (not stored) via HMAC so no
+// schema change or extra DB lookup is needed to verify it.
+function buildDepositCallbackKey(invoiceNumber) {
+  return crypto
+    .createHmac("sha256", process.env.JWT_SECRET || "auto-deposit-fallback")
+    .update(String(invoiceNumber))
+    .digest("hex");
+}
+
+function sameKey(a, b) {
+  const x = Buffer.from(String(a || ""));
+  const y = Buffer.from(String(b || ""));
+  return x.length > 0 && x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
 /* ----------------------------- ADMIN: GET SETTINGS ----------------------------- */
@@ -483,7 +503,8 @@ router.post("/create", protectUser, async (req, res) => {
       });
     }
 
-    const callbackUrl = `${backend}/api/auto-deposit/webhook`;
+    const callbackKey = buildDepositCallbackKey(invoiceNumber);
+    const callbackUrl = `${backend}/api/auto-deposit/webhook/${invoiceNumber}/${callbackKey}`;
     const successRedirectUrl = `${frontend}`;
 
     const opayRes = await axios.post(
@@ -764,12 +785,7 @@ router.get("/deposits/admin", protectAdmin, async (req, res) => {
 
 /* ----------------------------- WEBHOOK ----------------------------- */
 
-router.post("/webhook", async (req, res) => {
-  res.send("OK");
-
-  try {
-    const data = req.body || {};
-
+async function processDepositWebhook(data) {
     const invoiceNumber = safeString(data.invoice_number);
     const userId = safeString(data.user_identity);
     const statusRaw = safeString(data.status).toUpperCase();
@@ -988,6 +1004,40 @@ router.post("/webhook", async (req, res) => {
       creditedAmount: deposit?.calc?.creditedAmount || 0,
       targetTurnover: deposit?.calc?.targetTurnover || 0,
     });
+}
+
+// New, secure callback URL — every payment page generated from now on uses
+// this. The key proves the call actually came from the gateway for this
+// exact invoice.
+router.post("/webhook/:invoiceNumber/:key", async (req, res) => {
+  res.send("OK");
+
+  try {
+    const { invoiceNumber, key } = req.params;
+    const expectedKey = buildDepositCallbackKey(invoiceNumber);
+
+    if (!sameKey(expectedKey, key)) {
+      console.log("auto-deposit webhook: key mismatch for", invoiceNumber);
+      return;
+    }
+
+    await processDepositWebhook({
+      ...(req.body || {}),
+      invoice_number: invoiceNumber,
+    });
+  } catch (error) {
+    console.error("auto-deposit webhook error:", error?.message || error);
+  }
+});
+
+// Legacy, unkeyed callback URL — kept only so payment pages generated
+// before this change (already shown to a user, possibly mid-payment) keep
+// working. Not used for any new payment link.
+router.post("/webhook", async (req, res) => {
+  res.send("OK");
+
+  try {
+    await processDepositWebhook(req.body || {});
   } catch (error) {
     console.error("auto-deposit webhook error:", error?.message || error);
   }
