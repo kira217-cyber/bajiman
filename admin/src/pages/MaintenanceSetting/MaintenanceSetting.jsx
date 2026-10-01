@@ -24,7 +24,16 @@ const btnDanger = `${btnBase} border border-red-500/30 bg-red-500/10 text-red-30
 
 const btnSuccess = `${btnBase} border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20`;
 
-const ImageUploadCard = ({ title, subtitle, previewUrl, onFileChange, onSave, saving, hasFile }) => (
+const ImageUploadCard = ({
+  title,
+  subtitle,
+  sizeHint,
+  previewUrl,
+  onFileChange,
+  onSave,
+  saving,
+  hasFile,
+}) => (
   <div className={`${sectionCard} p-5 lg:p-6`}>
     <div className="mb-4 flex items-center gap-3">
       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#1A79D3]/20">
@@ -58,10 +67,7 @@ const ImageUploadCard = ({ title, subtitle, previewUrl, onFileChange, onSave, sa
       />
     </label>
 
-    <p className="mt-2 text-xs text-blue-100/60">
-      প্রস্তাবিত সাইজ: 1080 x 1920px (ফোন full-screen পোর্ট্রেট), landscape
-      ভিউ-তেও স্বয়ংক্রিয়ভাবে ফিট হয়ে যাবে
-    </p>
+    <p className="mt-2 text-xs text-blue-100/60">প্রস্তাবিত সাইজ: {sizeHint}</p>
 
     <button
       type="button"
@@ -75,15 +81,31 @@ const ImageUploadCard = ({ title, subtitle, previewUrl, onFileChange, onSave, sa
   </div>
 );
 
+// One file-picker + preview per image field (clientImageDesktop,
+// clientImageMobile, affiliateImageDesktop, affiliateImageMobile) — same
+// shape repeated 4 times, so it's a hook instead of 4 copies of the same
+// 3 useState + 1 useEffect block.
+const useImageField = (currentUrl) => {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!file) {
+      setPreview(currentUrl || "");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, currentUrl]);
+
+  return { file, setFile, preview, saving, setSaving };
+};
+
 const MaintenanceSetting = () => {
   const qc = useQueryClient();
 
-  const [clientFile, setClientFile] = useState(null);
-  const [affiliateFile, setAffiliateFile] = useState(null);
-  const [clientPreview, setClientPreview] = useState("");
-  const [affiliatePreview, setAffiliatePreview] = useState("");
-  const [savingClient, setSavingClient] = useState(false);
-  const [savingAffiliate, setSavingAffiliate] = useState(false);
   const [toggling, setToggling] = useState(false);
 
   const {
@@ -100,25 +122,10 @@ const MaintenanceSetting = () => {
 
   const setting = settingRes?.data || {};
 
-  useEffect(() => {
-    if (!clientFile) {
-      setClientPreview(setting.clientImageUrl || "");
-      return;
-    }
-    const url = URL.createObjectURL(clientFile);
-    setClientPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [clientFile, setting.clientImageUrl]);
-
-  useEffect(() => {
-    if (!affiliateFile) {
-      setAffiliatePreview(setting.affiliateImageUrl || "");
-      return;
-    }
-    const url = URL.createObjectURL(affiliateFile);
-    setAffiliatePreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [affiliateFile, setting.affiliateImageUrl]);
+  const clientDesktop = useImageField(setting.clientImageDesktopUrl);
+  const clientMobile = useImageField(setting.clientImageMobileUrl);
+  const affiliateDesktop = useImageField(setting.affiliateImageDesktopUrl);
+  const affiliateMobile = useImageField(setting.affiliateImageMobileUrl);
 
   const handleToggle = async () => {
     const nextEnabled = !setting.enabled;
@@ -146,24 +153,24 @@ const MaintenanceSetting = () => {
     }
   };
 
-  const uploadImage = async (field, file, setSaving, clearFile) => {
+  const uploadImage = async (fieldName, field) => {
     try {
-      setSaving(true);
+      field.setSaving(true);
 
       const fd = new FormData();
-      fd.append(field, file);
+      fd.append(fieldName, field.file);
 
       await api.post("/api/maintenance/upload", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
       toast.success("ছবি আপলোড হয়ে গেছে");
-      clearFile(null);
+      field.setFile(null);
       await qc.invalidateQueries({ queryKey: ["maintenance-setting"] });
     } catch (error) {
       toast.error(error?.response?.data?.message || "Upload failed");
     } finally {
-      setSaving(false);
+      field.setSaving(false);
     }
   };
 
@@ -248,35 +255,66 @@ const MaintenanceSetting = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <ImageUploadCard
-            title="Client Site Image"
-            subtitle="bajiman.com এ দেখাবে"
-            previewUrl={clientPreview}
-            onFileChange={setClientFile}
-            hasFile={Boolean(clientFile)}
-            saving={savingClient}
-            onSave={() =>
-              uploadImage("clientImage", clientFile, setSavingClient, setClientFile)
-            }
-          />
+        <div>
+          <h2 className="mb-3 px-1 text-lg font-bold text-white">
+            Client Site (bajiman.com)
+          </h2>
 
-          <ImageUploadCard
-            title="Affiliate Site Image"
-            subtitle="m-affiliate.bajiman.com এ দেখাবে"
-            previewUrl={affiliatePreview}
-            onFileChange={setAffiliateFile}
-            hasFile={Boolean(affiliateFile)}
-            saving={savingAffiliate}
-            onSave={() =>
-              uploadImage(
-                "affiliateImage",
-                affiliateFile,
-                setSavingAffiliate,
-                setAffiliateFile,
-              )
-            }
-          />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ImageUploadCard
+              title="Desktop Image"
+              subtitle="বড় স্ক্রিনে (ল্যাপটপ/পিসি) দেখাবে"
+              sizeHint="1920 x 1080px (landscape)"
+              previewUrl={clientDesktop.preview}
+              onFileChange={clientDesktop.setFile}
+              hasFile={Boolean(clientDesktop.file)}
+              saving={clientDesktop.saving}
+              onSave={() => uploadImage("clientImageDesktop", clientDesktop)}
+            />
+
+            <ImageUploadCard
+              title="Mobile Image"
+              subtitle="ফোনে দেখাবে"
+              sizeHint="1080 x 1920px (full-screen পোর্ট্রেট)"
+              previewUrl={clientMobile.preview}
+              onFileChange={clientMobile.setFile}
+              hasFile={Boolean(clientMobile.file)}
+              saving={clientMobile.saving}
+              onSave={() => uploadImage("clientImageMobile", clientMobile)}
+            />
+          </div>
+        </div>
+
+        <div>
+          <h2 className="mb-3 px-1 text-lg font-bold text-white">
+            Affiliate Site (m-affiliate.bajiman.com)
+          </h2>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ImageUploadCard
+              title="Desktop Image"
+              subtitle="বড় স্ক্রিনে (ল্যাপটপ/পিসি) দেখাবে"
+              sizeHint="1920 x 1080px (landscape)"
+              previewUrl={affiliateDesktop.preview}
+              onFileChange={affiliateDesktop.setFile}
+              hasFile={Boolean(affiliateDesktop.file)}
+              saving={affiliateDesktop.saving}
+              onSave={() =>
+                uploadImage("affiliateImageDesktop", affiliateDesktop)
+              }
+            />
+
+            <ImageUploadCard
+              title="Mobile Image"
+              subtitle="ফোনে দেখাবে"
+              sizeHint="1080 x 1920px (full-screen পোর্ট্রেট)"
+              previewUrl={affiliateMobile.preview}
+              onFileChange={affiliateMobile.setFile}
+              hasFile={Boolean(affiliateMobile.file)}
+              saving={affiliateMobile.saving}
+              onSave={() => uploadImage("affiliateImageMobile", affiliateMobile)}
+            />
+          </div>
         </div>
       </div>
     </div>

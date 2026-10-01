@@ -40,15 +40,35 @@ const deleteLocalFile = (value = "") => {
 const getOrCreateSetting = async () => {
   return MaintenanceSetting.findOneAndUpdate(
     { _id: SINGLETON_ID },
-    { $setOnInsert: { enabled: false, clientImage: "", affiliateImage: "" } },
+    {
+      $setOnInsert: {
+        enabled: false,
+        clientImageDesktop: "",
+        clientImageMobile: "",
+        affiliateImageDesktop: "",
+        affiliateImageMobile: "",
+      },
+    },
     { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
   );
 };
 
-const uploadFields = upload.fields([
-  { name: "clientImage", maxCount: 1 },
-  { name: "affiliateImage", maxCount: 1 },
-]);
+const IMAGE_FIELDS = [
+  "clientImageDesktop",
+  "clientImageMobile",
+  "affiliateImageDesktop",
+  "affiliateImageMobile",
+];
+
+const uploadFields = upload.fields(
+  IMAGE_FIELDS.map((name) => ({ name, maxCount: 1 })),
+);
+
+const buildImageUrls = (req, setting) =>
+  IMAGE_FIELDS.reduce((acc, field) => {
+    acc[`${field}Url`] = buildFileUrl(req, setting[field]);
+    return acc;
+  }, {});
 
 /* ======================================================
    PUBLIC: current maintenance status
@@ -63,8 +83,7 @@ router.get("/status", async (req, res) => {
 
     return successResponse(res, "Maintenance status loaded", {
       enabled: Boolean(setting.enabled),
-      clientImageUrl: buildFileUrl(req, setting.clientImage),
-      affiliateImageUrl: buildFileUrl(req, setting.affiliateImage),
+      ...buildImageUrls(req, setting),
     });
   } catch (error) {
     return errorResponse(res, error.message || "Server error", 500);
@@ -81,8 +100,7 @@ router.get("/", protectAdmin, async (req, res) => {
 
     return successResponse(res, "Maintenance setting loaded", {
       enabled: Boolean(setting.enabled),
-      clientImageUrl: buildFileUrl(req, setting.clientImage),
-      affiliateImageUrl: buildFileUrl(req, setting.affiliateImage),
+      ...buildImageUrls(req, setting),
     });
   } catch (error) {
     return errorResponse(res, error.message || "Server error", 500);
@@ -116,23 +134,22 @@ router.put("/toggle", protectAdmin, async (req, res) => {
    POST /api/maintenance/upload
 ====================================================== */
 router.post("/upload", protectAdmin, uploadFields, async (req, res) => {
-  const clientImageFile = req.files?.clientImage?.[0];
-  const affiliateImageFile = req.files?.affiliateImage?.[0];
+  const uploadedFiles = IMAGE_FIELDS.reduce((acc, field) => {
+    const file = req.files?.[field]?.[0];
+    if (file) acc[field] = file;
+    return acc;
+  }, {});
 
   try {
-    if (!clientImageFile && !affiliateImageFile) {
+    if (!Object.keys(uploadedFiles).length) {
       return errorResponse(res, "No image uploaded", 400);
     }
 
     const existing = await getOrCreateSetting();
     const update = {};
 
-    if (clientImageFile) {
-      update.clientImage = filePath(clientImageFile);
-    }
-
-    if (affiliateImageFile) {
-      update.affiliateImage = filePath(affiliateImageFile);
+    for (const field of Object.keys(uploadedFiles)) {
+      update[field] = filePath(uploadedFiles[field]);
     }
 
     const setting = await MaintenanceSetting.findOneAndUpdate(
@@ -141,22 +158,18 @@ router.post("/upload", protectAdmin, uploadFields, async (req, res) => {
       { returnDocument: "after" },
     );
 
-    if (clientImageFile && existing.clientImage) {
-      deleteLocalFile(existing.clientImage);
-    }
-
-    if (affiliateImageFile && existing.affiliateImage) {
-      deleteLocalFile(existing.affiliateImage);
+    for (const field of Object.keys(uploadedFiles)) {
+      if (existing[field]) deleteLocalFile(existing[field]);
     }
 
     return successResponse(res, "Maintenance image updated", {
       enabled: Boolean(setting.enabled),
-      clientImageUrl: buildFileUrl(req, setting.clientImage),
-      affiliateImageUrl: buildFileUrl(req, setting.affiliateImage),
+      ...buildImageUrls(req, setting),
     });
   } catch (error) {
-    if (clientImageFile) deleteLocalFile(filePath(clientImageFile));
-    if (affiliateImageFile) deleteLocalFile(filePath(affiliateImageFile));
+    for (const file of Object.values(uploadedFiles)) {
+      deleteLocalFile(filePath(file));
+    }
 
     return errorResponse(res, error.message || "Server error", 500);
   }

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import api from "../../api/axios";
 
-const CACHE_KEY = "maintenance_status_cache_v1";
+const CACHE_KEY = "maintenance_status_cache_v2";
 const POLL_INTERVAL_MS = 15000;
+const MOBILE_BREAKPOINT = 768;
 
 const readCache = () => {
   try {
@@ -33,8 +34,23 @@ const MaintenanceFallback = () => (
   </div>
 );
 
-const MaintenanceScreen = ({ imageUrl }) => {
+const MaintenanceScreen = ({ desktopUrl, mobileUrl }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    window.innerWidth < MOBILE_BREAKPOINT,
+  );
+
+  useEffect(() => {
+    const onResize = () =>
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Each breakpoint prefers its own image, but falls back to the other
+  // one rather than showing nothing if only one was ever uploaded.
+  const imageUrl = (isMobile ? mobileUrl : desktopUrl) || mobileUrl || desktopUrl;
 
   return (
     <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black">
@@ -42,7 +58,7 @@ const MaintenanceScreen = ({ imageUrl }) => {
         <img
           src={imageUrl}
           alt="Site under maintenance"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           onError={() => setImgFailed(true)}
         />
       ) : (
@@ -58,16 +74,19 @@ const MaintenanceScreen = ({ imageUrl }) => {
 // api/axios.js, which this listens for via window events rather than a
 // shared store, so it has zero import-order dependency on anything).
 //
-// `site` picks which of the two admin-uploaded images to show
+// `site` picks which of the two admin-uploaded image pairs to show
 // ("client" | "affiliate") — one /api/maintenance/status response
-// carries both, since the manual on/off switch is shared across sites.
+// carries all four, since the manual on/off switch is shared across
+// sites. Each pair has a desktop and a mobile image so the full-screen
+// image fits whichever shape of screen it lands on.
 const MaintenanceGate = ({ site, children }) => {
   const cached = readCache();
 
   const [manualEnabled, setManualEnabled] = useState(
     cached?.enabled ?? false,
   );
-  const [imageUrl, setImageUrl] = useState(cached?.imageUrl || "");
+  const [desktopUrl, setDesktopUrl] = useState(cached?.desktopUrl || "");
+  const [mobileUrl, setMobileUrl] = useState(cached?.mobileUrl || "");
   const [autoTriggered, setAutoTriggered] = useState(false);
 
   const pollRef = useRef(null);
@@ -79,16 +98,25 @@ const MaintenanceGate = ({ site, children }) => {
         const payload = data?.data || {};
 
         const enabled = Boolean(payload.enabled);
-        const url =
+        const desktop =
           site === "affiliate"
-            ? payload.affiliateImageUrl
-            : payload.clientImageUrl;
+            ? payload.affiliateImageDesktopUrl
+            : payload.clientImageDesktopUrl;
+        const mobile =
+          site === "affiliate"
+            ? payload.affiliateImageMobileUrl
+            : payload.clientImageMobileUrl;
 
         setManualEnabled(enabled);
-        setImageUrl(url || "");
+        setDesktopUrl(desktop || "");
+        setMobileUrl(mobile || "");
         setAutoTriggered(false);
 
-        writeCache({ enabled, imageUrl: url || "" });
+        writeCache({
+          enabled,
+          desktopUrl: desktop || "",
+          mobileUrl: mobile || "",
+        });
       } catch {
         // The axios interceptor's "api-health-error" event already
         // covers this — the last cached enabled/image stays as-is.
@@ -112,7 +140,7 @@ const MaintenanceGate = ({ site, children }) => {
   }, [site]);
 
   if (manualEnabled || autoTriggered) {
-    return <MaintenanceScreen imageUrl={imageUrl} />;
+    return <MaintenanceScreen desktopUrl={desktopUrl} mobileUrl={mobileUrl} />;
   }
 
   return children;

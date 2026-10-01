@@ -28,13 +28,28 @@ const MaintenanceSettingSchema = new mongoose.Schema(
       default: false,
     },
 
-    clientImage: {
+    // Desktop/mobile are shown on different-shaped screens (landscape vs
+    // full-screen portrait), so one image stretched/cropped across both
+    // never sits right on one of them — each site gets its own pair.
+    clientImageDesktop: {
       type: String,
       default: "",
       trim: true,
     },
 
-    affiliateImage: {
+    clientImageMobile: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    affiliateImageDesktop: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    affiliateImageMobile: {
       type: String,
       default: "",
       trim: true,
