@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Wrench, RotateCw } from "lucide-react";
 import api from "../../api/axios";
+import bajimanLogo from "../../assets/maintenance-logo.png";
 
 const CACHE_KEY = "maintenance_status_cache_v2";
 const POLL_INTERVAL_MS = 15000;
 const MOBILE_BREAKPOINT = 768;
+const BRAND_RED = "#ff1616";
 
 const readCache = () => {
   try {
@@ -22,15 +25,45 @@ const writeCache = (data) => {
   }
 };
 
-// Bundled — no network, no image — so this is what shows in the worst
-// case (the API is so unreachable that even the uploaded maintenance
-// image fails to load).
+// Bajiman-branded fallback — shown whenever there's no admin-uploaded
+// image to display (auto-detected outage, or the image itself failed to
+// load). Logo is bundled (not fetched from the API), since this screen's
+// whole job is to still render while the API is unreachable.
 const MaintenanceFallback = () => (
-  <div className="px-6 text-center text-white">
-    <p className="text-2xl font-bold">সাইট মেইনটেন্যান্সে আছে</p>
-    <p className="mt-2 text-sm text-white/70">
+  <div className="flex flex-col items-center px-6 text-center">
+    <img
+      src={bajimanLogo}
+      alt="Bajiman"
+      className="h-14 w-auto object-contain sm:h-16"
+      draggable={false}
+    />
+
+    <div
+      className="mt-8 flex h-16 w-16 items-center justify-center rounded-full"
+      style={{
+        backgroundColor: "rgba(255, 22, 22, 0.12)",
+        boxShadow: `0 0 0 1px rgba(255, 22, 22, 0.35)`,
+      }}
+    >
+      <Wrench size={26} style={{ color: BRAND_RED }} />
+    </div>
+
+    <p className="mt-6 text-2xl font-bold text-white">
+      সাইট মেইনটেন্যান্সে আছে
+    </p>
+    <p className="mt-2 max-w-sm text-sm leading-6 text-white/65">
       আমরা শীঘ্রই ফিরে আসছি, একটু পরে আবার চেষ্টা করুন।
     </p>
+
+    <button
+      type="button"
+      onClick={() => window.location.reload()}
+      className="mt-8 inline-flex cursor-pointer items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white transition hover:brightness-110"
+      style={{ backgroundColor: BRAND_RED }}
+    >
+      <RotateCw size={15} />
+      আবার চেষ্টা করুন
+    </button>
   </div>
 );
 
@@ -67,6 +100,35 @@ const MaintenanceScreen = ({ desktopUrl, mobileUrl }) => {
     </div>
   );
 };
+
+// A render crash anywhere below this (very likely during a real API
+// outage — most components aren't null-safe against failed fetches)
+// used to take down the whole React tree with nothing to catch it,
+// silently skipping the maintenance screen entirely. This boundary
+// catches that and falls back to the same branded screen.
+class MaintenanceErrorBoundary extends React.Component {
+  state = { crashed: false };
+
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("MaintenanceGate caught a render crash:", error);
+  }
+
+  render() {
+    if (this.state.crashed) {
+      return (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black">
+          <MaintenanceFallback />
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Gates the whole app behind a full-screen maintenance image when EITHER
 // an admin has manually turned maintenance on, OR the API is currently
@@ -143,7 +205,9 @@ const MaintenanceGate = ({ site, children }) => {
     return <MaintenanceScreen desktopUrl={desktopUrl} mobileUrl={mobileUrl} />;
   }
 
-  return children;
+  return (
+    <MaintenanceErrorBoundary>{children}</MaintenanceErrorBoundary>
+  );
 };
 
 export default MaintenanceGate;
