@@ -101,6 +101,15 @@ const AutoWithdrawSettingSchema = new Schema(
       type: [MethodSchema],
       default: () => DEFAULT_METHODS,
     },
+
+    // Last gateway failure message, surfaced to admin on the settings page
+    // so a broken token/endpoint is visible without digging through
+    // individual withdraw records.
+    lastError: {
+      type: String,
+      default: "",
+      trim: true,
+    },
   },
   { timestamps: true },
 );

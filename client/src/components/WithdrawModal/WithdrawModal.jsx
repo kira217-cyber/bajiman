@@ -74,8 +74,8 @@ const WithdrawModal = ({ open, onClose, onHistoryClick, onDepositClick }) => {
       : "Reviewed and approved by admin",
     autoTitle: isBangla ? "অটো উইথড্র" : "Auto Withdraw",
     autoDesc: isBangla
-      ? "সরাসরি গেটওয়ে থেকে সাথে সাথে টাকা পাবেন"
-      : "Instantly sent by the gateway, no wait",
+      ? "অনুমোদনের পর গেটওয়ে থেকে সরাসরি টাকা পাবেন"
+      : "Sent directly by the gateway once approved",
     chooseMethod: isBangla ? "উইথড্র পদ্ধতি বেছে নিন" : "Choose Withdraw Method",
     closedTitle: isBangla ? "উইথড্র সাময়িকভাবে বন্ধ" : "Withdraw Temporarily Closed",
     closedDesc: isBangla

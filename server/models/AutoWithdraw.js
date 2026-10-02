@@ -129,6 +129,35 @@ const AutoWithdrawSchema = new Schema(
       trim: true,
     },
 
+    // Set for the duration of an in-flight approve→gateway call so a
+    // double-click (or two admins approving at once) can't send the same
+    // withdraw twice; cleared on success/failure. A stale value (approve
+    // request died mid-flight) is treated as expired after a couple of
+    // minutes, so the record doesn't get stuck un-approvable forever.
+    sendingAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Last gateway failure message for this record, shown to admin so they
+    // know why approving didn't go through before they retry/reject.
+    gatewayError: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+
     completedAt: {
       type: Date,
       default: null,

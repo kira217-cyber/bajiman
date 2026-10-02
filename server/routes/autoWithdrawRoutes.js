@@ -69,6 +69,9 @@ const normalizeWalletNumber = (value) => {
   let v = String(value || "").trim();
   if (v.startsWith("+880")) v = `0${v.slice(4)}`;
   else if (v.startsWith("880")) v = `0${v.slice(3)}`;
+  // Some rows are stored without the leading 0 (e.g. "1711..." instead of
+  // "01711...") — the gateway needs the full 11-digit form.
+  if (/^1\d{9}$/.test(v)) v = `0${v}`;
   return v;
 };
 
@@ -109,6 +112,7 @@ router.get("/admin", protectAdmin, async (req, res) => {
         active: !!setting.active,
         minAmount: Number(setting.minAmount || 500),
         maxAmount: Number(setting.maxAmount || 0),
+        lastError: setting.lastError || "",
         methods: (setting.methods || []).map((m) => ({
           code: m.code,
           name: { bn: m?.name?.bn || "", en: m?.name?.en || "" },
@@ -455,7 +459,11 @@ router.post("/create", protectUser, async (req, res) => {
     const accountNumber = normalizeWalletNumber(wallet.walletNumber);
     const callbackKey = crypto.randomBytes(24).toString("hex");
 
-    let withdrawDoc = await AutoWithdraw.create({
+    // The gateway is NOT called here — only on admin approval (see
+    // POST /withdrawals/:id/approve). This matches the reviewed/approved
+    // flow: money only leaves once an admin has checked the request, not
+    // the instant the user submits it.
+    const withdrawDoc = await AutoWithdraw.create({
       user: user._id,
       userIdentity: String(user._id),
       amount,
@@ -469,90 +477,15 @@ router.post("/create", protectUser, async (req, res) => {
       callbackKey,
     });
 
-    const { backend, frontend } = buildPublicUrls();
-
-    if (!backend || !frontend) {
-      await refundWithdraw(
-        { _id: withdrawDoc._id },
-        { reason: "PUBLIC_BACKEND_URL / PUBLIC_FRONTEND_URL missing" },
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: "PUBLIC_BACKEND_URL and PUBLIC_FRONTEND_URL are required",
-      });
+    if (otpSetting.withdrawEnabled) {
+      consumeUserOtp(userId);
     }
 
-    const callbackUrl = `${backend}/api/auto-withdraw/webhook/${callbackKey}`;
-
-    try {
-      const opayRes = await axios.post(
-        gatewayUrl(),
-        {
-          amount,
-          payment_method: methodCode,
-          user_identity_address: String(user._id),
-          account_number: accountNumber,
-          callback_url: callbackUrl,
-          checkout_items: { withdrawId: String(withdrawDoc._id) },
-        },
-        {
-          headers: {
-            "X-Opay-Business-Token": String(setting.businessToken || "").trim(),
-            "Content-Type": "application/json",
-          },
-          timeout: 20000,
-        },
-      );
-
-      if (!opayRes?.data?.success) {
-        throw new Error(opayRes?.data?.message || "Gateway rejected request");
-      }
-
-      const gatewayData = opayRes?.data?.data || {};
-
-      withdrawDoc = await AutoWithdraw.findByIdAndUpdate(
-        withdrawDoc._id,
-        {
-          $set: {
-            status: "PROCESSING",
-            withdrawalId: safeString(gatewayData.withdrawal_id),
-            feePercentage: Number(gatewayData.fee_percentage || 0),
-            feeAmount: Number(gatewayData.fee_amount || 0),
-            deductedAmount: Number(gatewayData.deducted_amount || amount),
-          },
-        },
-        { returnDocument: "after" },
-      );
-
-      if (otpSetting.withdrawEnabled) {
-        consumeUserOtp(userId);
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: "Auto withdraw request submitted",
-        data: withdrawDoc,
-      });
-    } catch (gatewayError) {
-      await refundWithdraw(
-        { _id: withdrawDoc._id },
-        {
-          reason:
-            gatewayError?.response?.data?.message ||
-            gatewayError?.message ||
-            "Gateway request failed",
-        },
-      );
-
-      return res.status(502).json({
-        success: false,
-        message:
-          gatewayError?.response?.data?.message ||
-          gatewayError?.message ||
-          "Failed to submit auto withdraw. Your balance has been refunded.",
-      });
-    }
+    return res.status(201).json({
+      success: true,
+      message: "Auto withdraw request submitted — waiting for admin approval",
+      data: withdrawDoc,
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -674,6 +607,8 @@ router.get("/withdrawals/admin", protectAdmin, async (req, res) => {
                 status: 1,
                 proofImages: 1,
                 reason: 1,
+                gatewayError: 1,
+                approvedAt: 1,
                 balanceBefore: 1,
                 balanceAfter: 1,
                 createdAt: 1,
@@ -755,8 +690,174 @@ router.get("/withdrawals/admin", protectAdmin, async (req, res) => {
   }
 });
 
+/* ----------------------------- ADMIN: APPROVE (sends to gateway) ----------------------------- */
+
+// Money only actually leaves once an admin approves a PENDING request —
+// this is the one place the gateway gets called. `sendingAt` is claimed
+// atomically so a double-click (or two admins approving the same request
+// at once) can't send it to the gateway twice; a stale claim (the approve
+// request died mid-flight) expires after 2 minutes so the record doesn't
+// get stuck un-approvable forever.
+router.post("/withdrawals/:id/approve", protectAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid id",
+      });
+    }
+
+    const setting = await getOrCreateSetting();
+
+    if (!setting.businessToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Set the OraclePay business token in Auto Withdraw settings first",
+      });
+    }
+
+    // Already sent to the gateway in an earlier approve (race/retry) —
+    // don't send again, just make sure it reads as PROCESSING.
+    const alreadySent = await AutoWithdraw.findOneAndUpdate(
+      { _id: req.params.id, status: "PENDING", withdrawalId: { $ne: "" } },
+      { $set: { status: "PROCESSING", approvedBy: req.admin?._id || null, approvedAt: new Date() } },
+      { returnDocument: "after" },
+    );
+
+    if (alreadySent) {
+      return res.json({
+        success: true,
+        message: "Already sent to gateway — marked as processing",
+        data: alreadySent,
+      });
+    }
+
+    const staleThreshold = new Date(Date.now() - 2 * 60 * 1000);
+
+    const record = await AutoWithdraw.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        status: "PENDING",
+        refunded: false,
+        $or: [{ sendingAt: null }, { sendingAt: { $lt: staleThreshold } }],
+      },
+      { $set: { sendingAt: new Date() } },
+      { returnDocument: "after" },
+    ).select("+callbackKey");
+
+    if (!record) {
+      return res.status(400).json({
+        success: false,
+        message: "Only a pending withdrawal can be approved",
+      });
+    }
+
+    const { backend } = buildPublicUrls();
+
+    if (!backend) {
+      await AutoWithdraw.updateOne(
+        { _id: record._id },
+        { $set: { sendingAt: null } },
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: "PUBLIC_BACKEND_URL is required",
+      });
+    }
+
+    const callbackUrl = `${backend}/api/auto-withdraw/webhook/${record.callbackKey}`;
+
+    try {
+      const opayRes = await axios.post(
+        gatewayUrl(),
+        {
+          amount: record.amount,
+          payment_method: record.paymentMethod,
+          user_identity_address: record.accountNumber,
+          account_number: record.accountNumber,
+          callback_url: callbackUrl,
+          checkout_items: [
+            { userId: record.userIdentity },
+            { withdrawal_type: "user" },
+          ],
+        },
+        {
+          headers: {
+            "X-Opay-Business-Token": String(setting.businessToken || "").trim(),
+            "Content-Type": "application/json",
+          },
+          timeout: 20000,
+        },
+      );
+
+      if (!opayRes?.data?.success || !opayRes?.data?.data?.withdrawal_id) {
+        throw new Error(opayRes?.data?.message || "Gateway did not accept the request");
+      }
+
+      const gatewayData = opayRes.data.data;
+
+      const updated = await AutoWithdraw.findOneAndUpdate(
+        { _id: record._id },
+        {
+          $set: {
+            status: "PROCESSING",
+            withdrawalId: safeString(gatewayData.withdrawal_id),
+            feePercentage: Number(gatewayData.fee_percentage || 0),
+            feeAmount: Number(gatewayData.fee_amount || 0),
+            deductedAmount: Number(gatewayData.deducted_amount || record.amount),
+            approvedBy: req.admin?._id || null,
+            approvedAt: new Date(),
+            sendingAt: null,
+            gatewayError: "",
+          },
+        },
+        { returnDocument: "after" },
+      );
+
+      if (setting.lastError) {
+        setting.lastError = "";
+        await setting.save();
+      }
+
+      return res.json({
+        success: true,
+        message: "Sent to OraclePay — now processing",
+        data: updated,
+      });
+    } catch (gatewayError) {
+      const message =
+        gatewayError?.response?.data?.message ||
+        gatewayError?.message ||
+        "Gateway error";
+
+      await AutoWithdraw.updateOne(
+        { _id: record._id },
+        { $set: { sendingAt: null, gatewayError: message.slice(0, 300) } },
+      );
+
+      setting.lastError = message.slice(0, 300);
+      await setting.save();
+
+      return res.status(502).json({
+        success: false,
+        message: `OraclePay did not accept it: ${message}`,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Approve failed",
+    });
+  }
+});
+
 /* ----------------------------- ADMIN: MANUAL REJECT + REFUND ----------------------------- */
 
+// Only a request that hasn't been sent to the gateway yet can be rejected
+// here — once the gateway has it, only OraclePay's own REJECTED webhook can
+// end it, otherwise the gateway could still pay out after we'd already
+// refunded the user, paying them twice.
 router.post("/withdrawals/:id/reject", protectAdmin, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -766,26 +867,16 @@ router.post("/withdrawals/:id/reject", protectAdmin, async (req, res) => {
       });
     }
 
-    const record = await AutoWithdraw.findById(req.params.id);
-
-    if (!record) {
-      return res.status(404).json({
-        success: false,
-        message: "Not found",
-      });
-    }
-
-    if (record.status === "COMPLETED") {
-      return res.status(400).json({
-        success: false,
-        message: "Already completed, cannot reject",
-      });
-    }
-
     const reason = safeString(req.body?.reason) || "Rejected by admin";
 
     const updated = await refundWithdraw(
-      { _id: record._id },
+      {
+        _id: req.params.id,
+        status: "PENDING",
+        withdrawalId: "",
+        approvedAt: null,
+        sendingAt: null,
+      },
       {
         reason,
         reviewedBy: req.admin?._id || null,
@@ -796,7 +887,8 @@ router.post("/withdrawals/:id/reject", protectAdmin, async (req, res) => {
     if (!updated) {
       return res.status(400).json({
         success: false,
-        message: "This withdraw was already refunded",
+        message:
+          "Only a pending withdrawal that hasn't been sent to the gateway can be rejected",
       });
     }
 
@@ -820,19 +912,37 @@ router.post("/webhook/:key", async (req, res) => {
 
   try {
     const data = req.body || {};
-    const key = req.params.key;
-
-    const withdrawId = safeString(
-      data?.checkout_items?.withdrawId || data?.withdrawal_id,
-    );
+    const key = safeString(req.params.key);
     const statusRaw = safeString(data.status).toUpperCase();
+    const withdrawalId = safeString(data.withdrawal_id);
 
-    const record = withdrawId
-      ? await AutoWithdraw.findById(withdrawId).select("+callbackKey")
-      : null;
+    if (!/^[a-f0-9]{48}$/.test(key)) {
+      console.log("auto-withdraw webhook: malformed key");
+      return;
+    }
+
+    const record = await AutoWithdraw.findOne({ callbackKey: key }).select(
+      "+callbackKey",
+    );
 
     if (!record || !sameKey(record.callbackKey, key)) {
       console.log("auto-withdraw webhook: unknown or key mismatch");
+      return;
+    }
+
+    if (
+      withdrawalId &&
+      record.withdrawalId &&
+      withdrawalId !== record.withdrawalId
+    ) {
+      console.log("auto-withdraw webhook: withdrawal_id does not match");
+      return;
+    }
+
+    // A webhook arriving for a record that was never actually sent to the
+    // gateway (no approve happened yet) can't be legitimate.
+    if (!record.withdrawalId && !record.sendingAt && !record.approvedAt) {
+      console.log("auto-withdraw webhook: record was never sent to gateway");
       return;
     }
 

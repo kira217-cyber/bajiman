@@ -118,16 +118,16 @@ const AutoWithdrawBody = ({
       ? "একটি পেমেন্ট মেথড নির্বাচন করুন"
       : "Please select a payment method",
     requestCreated: isBangla
-      ? "অটো উইথড্র request submit হয়েছে, কিছুক্ষণের মধ্যে টাকা পেয়ে যাবেন"
-      : "Auto withdraw submitted — you'll receive it automatically shortly",
+      ? "অটো উইথড্র request submit হয়েছে — অ্যাডমিন রিভিউ করে অনুমোদন দিলেই গেটওয়ে থেকে টাকা পাঠানো হবে"
+      : "Auto withdraw submitted — the gateway sends the money automatically once admin approves it",
     secureText: isBangla
-      ? "সাবমিট করলেই গেটওয়ে স্বয়ংক্রিয়ভাবে টাকা পাঠিয়ে দেবে"
-      : "Once submitted, the gateway sends the money automatically",
+      ? "অ্যাডমিন অনুমোদন দেওয়ার পর গেটওয়ে স্বয়ংক্রিয়ভাবে টাকা পাঠিয়ে দেবে"
+      : "Once admin approves, the gateway sends the money automatically",
     changeMode: isBangla ? "পদ্ধতি পরিবর্তন করুন" : "Change Method",
     autoLabel: isBangla ? "অটো উইথড্র" : "Auto Withdraw",
     instantNote: isBangla
-      ? "কোনো অ্যাডমিন অপেক্ষা ছাড়াই — সরাসরি গেটওয়ে থেকে টাকা যাবে"
-      : "No admin wait — money is sent directly from the gateway",
+      ? "অ্যাডমিন অনুমোদনের পর টাকা সরাসরি গেটওয়ে থেকে পাঠানো হবে, ম্যানুয়াল হাতে পাঠানোর দরকার নেই"
+      : "Once approved by admin, money is sent directly by the gateway — no manual transfer needed",
   };
 
   const selectedMethod = useMemo(

@@ -51,6 +51,7 @@ const AutoWithdrawSettings = () => {
   const [showToken, setShowToken] = useState(false);
   const [methods, setMethods] = useState(emptyMethods);
   const [uploadingCode, setUploadingCode] = useState("");
+  const [lastError, setLastError] = useState("");
 
   const { register, handleSubmit, reset, watch } = useForm({
     defaultValues: {
@@ -85,6 +86,8 @@ const AutoWithdrawSettings = () => {
           ? data.data.methods
           : emptyMethods,
       );
+
+      setLastError(data?.data?.lastError || "");
     } catch (err) {
       toast.error(
         err?.response?.data?.message || err?.message || "Load failed",
@@ -226,6 +229,16 @@ const AutoWithdrawSettings = () => {
             </div>
           </div>
         </div>
+
+        {lastError ? (
+          <div className="flex items-start gap-3 rounded-2xl border border-red-300/25 bg-red-500/10 p-4 text-sm text-red-200">
+            <FaShieldAlt className="mt-0.5 shrink-0 text-red-300" />
+            <div>
+              <div className="font-black">Last gateway error</div>
+              <div className="mt-1 text-red-200/85">{lastError}</div>
+            </div>
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">

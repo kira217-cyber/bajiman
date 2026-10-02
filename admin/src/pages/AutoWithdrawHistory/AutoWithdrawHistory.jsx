@@ -19,6 +19,8 @@ import {
   FaSpinner,
   FaBan,
   FaImage,
+  FaCheck,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 
 const inputClass =
@@ -109,6 +111,7 @@ const AutoWithdrawHistory = () => {
   const [rejectId, setRejectId] = useState("");
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
+  const [approvingId, setApprovingId] = useState("");
 
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(emptySummary);
@@ -239,6 +242,29 @@ const AutoWithdrawHistory = () => {
       );
     } finally {
       setRejecting(false);
+    }
+  };
+
+  const handleApprove = async (id) => {
+    try {
+      setApprovingId(id);
+
+      const { data } = await api.post(
+        `/api/auto-withdraw/withdrawals/${id}/approve`,
+      );
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Approve failed");
+      }
+
+      toast.success(data?.message || "Sent to gateway");
+      await fetchData({ page, qv: q, sv: status });
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message || err?.message || "Approve failed",
+      );
+    } finally {
+      setApprovingId("");
     }
   };
 
@@ -416,7 +442,11 @@ const AutoWithdrawHistory = () => {
                     {rows.map((item) => {
                       const isExpanded = expandedId === item._id;
                       const s = String(item.status || "PENDING").toUpperCase();
-                      const canReject = s === "PENDING" || s === "PROCESSING";
+                      // Only a request that hasn't reached the gateway yet
+                      // can be approved or rejected here — once it's
+                      // PROCESSING, only OraclePay's webhook can resolve it.
+                      const canReviewPending = s === "PENDING";
+                      const isApproving = approvingId === item._id;
 
                       return (
                         <React.Fragment key={item._id}>
@@ -480,15 +510,37 @@ const AutoWithdrawHistory = () => {
                                 />
                                 {s}
                               </span>
+
+                              {item.gatewayError ? (
+                                <div className="mt-1.5 inline-flex max-w-[220px] items-start gap-1.5 text-[11px] font-semibold text-red-300">
+                                  <FaExclamationTriangle className="mt-[2px] shrink-0" />
+                                  <span className="break-words">
+                                    {item.gatewayError}
+                                  </span>
+                                </div>
+                              ) : null}
                             </td>
 
                             <td className="px-6 py-4">
                               <div className="flex items-center justify-end gap-2">
-                                {canReject && (
+                                {canReviewPending && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApprove(item._id)}
+                                    disabled={isApproving}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300/20 bg-emerald-500/10 px-3 py-2 text-[12px] font-extrabold text-emerald-200 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <FaCheck />
+                                    {isApproving ? "Sending..." : "Approve"}
+                                  </button>
+                                )}
+
+                                {canReviewPending && (
                                   <button
                                     type="button"
                                     onClick={() => setRejectId(item._id)}
-                                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-[12px] font-extrabold text-red-200 transition hover:bg-red-500/20"
+                                    disabled={isApproving}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-[12px] font-extrabold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <FaBan />
                                     Reject
@@ -557,6 +609,20 @@ const AutoWithdrawHistory = () => {
                                       v={item.withdrawalId || "—"}
                                     />
                                     <FieldRow k="Reason" v={item.reason || "—"} />
+                                    <FieldRow
+                                      k="Gateway Error"
+                                      v={item.gatewayError || "—"}
+                                    />
+                                    <FieldRow
+                                      k="Approved At"
+                                      v={
+                                        item.approvedAt
+                                          ? new Date(
+                                              item.approvedAt,
+                                            ).toLocaleString()
+                                          : "—"
+                                      }
+                                    />
                                     <FieldRow
                                       k="Completed At"
                                       v={
