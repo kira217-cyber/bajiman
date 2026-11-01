@@ -14,10 +14,17 @@ import {
   FaClock,
   FaSyncAlt,
   FaCalendarDay,
+  FaBell,
+  FaMobileAlt,
+  FaMoneyBillWave,
+  FaRobot,
+  FaHandHoldingUsd,
 } from "react-icons/fa";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 import { api } from "../../api/axios";
+import PendingBadge from "../PendingBadge/PendingBadge";
+import { PENDING_ITEMS, usePending } from "../../features/pending/usePending";
 
 const money = (value) => {
   const num = Number(value || 0);
@@ -43,8 +50,18 @@ const emptyTodayCards = {
   allGames: 0,
 };
 
+// Every money path, so the totals can be read one by one
+const BREAKDOWN = [
+  { key: "manualDeposit", title: "Manual Deposit", icon: <FaMoneyBillWave />, to: "/deposit-requests", kind: "in" },
+  { key: "autoDeposit", title: "Auto Deposit", icon: <FaRobot />, to: "/auto-deposit-history", kind: "in" },
+  { key: "personalDeposit", title: "Personal Auto Deposit", icon: <FaMobileAlt />, to: "/mfs-deposit-history", kind: "in" },
+  { key: "manualWithdraw", title: "Manual Withdraw", icon: <FaHandHoldingUsd />, to: "/withdraw-requests", kind: "out" },
+  { key: "autoWithdraw", title: "Auto Withdraw", icon: <FaRobot />, to: "/auto-withdraw-history", kind: "out" },
+];
+
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { counts: pending, total: pendingTotal } = usePending();
 
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -347,6 +364,53 @@ const Dashboard = () => {
         </div>
 
         <div className="p-4 md:p-6 lg:p-8 space-y-8">
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#1A79D3]/15 flex items-center justify-center">
+                <FaBell className="text-lg text-[#3ea0ff]" />
+              </div>
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800">
+                  Waiting for you
+                  <PendingBadge count={pendingTotal} />
+                </h2>
+                <p className="text-sm text-slate-600">
+                  Requests that need an admin — updates every 30 seconds
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+              {PENDING_ITEMS.map((item) => {
+                const count = Number(pending[item.key] || 0);
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => navigate(item.to)}
+                    className={`cursor-pointer text-left rounded-[22px] border p-4 shadow-lg transition-all duration-300 hover:-translate-y-1 ${
+                      count > 0
+                        ? "ad-pending-card bg-red-50"
+                        : "border-[#1A79D3]/15 bg-white"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold text-slate-600 leading-snug">
+                      {item.label}
+                    </p>
+                    <h3
+                      className={`mt-2 text-2xl font-black ${
+                        count > 0 ? "text-red-600" : "text-slate-800"
+                      }`}
+                    >
+                      {count}
+                    </h3>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
             {cards.map((card) => (
               <button
@@ -373,6 +437,68 @@ const Dashboard = () => {
                 <div className="mt-5 text-xs text-[#6fb5f4]">Click to open</div>
               </button>
             ))}
+          </div>
+
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#1A79D3]/15 flex items-center justify-center">
+                <FaChartBar className="text-lg text-[#3ea0ff]" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">
+                  Deposit &amp; Withdraw Breakdown
+                </h2>
+                <p className="text-sm text-slate-600">
+                  Each path on its own — all time and today (Bangladesh time),
+                  counted when the money really moved
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+              {BREAKDOWN.map((item) => {
+                const row = summary?.breakdown?.[item.key] || {};
+
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => navigate(item.to)}
+                    className="cursor-pointer text-left rounded-[24px] border border-[#1A79D3]/15 bg-white p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#1A79D3]/60"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-600">
+                        {item.title}
+                      </p>
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                          item.kind === "in"
+                            ? "bg-emerald-500/10 text-emerald-600"
+                            : "bg-orange-500/10 text-orange-600"
+                        }`}
+                      >
+                        {item.icon}
+                      </div>
+                    </div>
+
+                    <h3 className="mt-3 text-xl font-black text-slate-800 break-words">
+                      {money(row.total)}
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {Number(row.count || 0)} records
+                    </p>
+
+                    <div className="mt-3 rounded-xl bg-[#1A79D3]/5 px-3 py-2 text-xs text-slate-600">
+                      Today:{" "}
+                      <span className="font-black text-[#1A79D3]">
+                        {money(row.today)}
+                      </span>{" "}
+                      ({Number(row.todayCount || 0)})
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>

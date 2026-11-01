@@ -4,6 +4,9 @@ import DepositRequest from "../models/DepositRequest.js";
 import AutoDeposit from "../models/AutoDeposit.js";
 import WithdrawRequest from "../models/WithdrawRequest.js";
 import Game from "../models/Game.js";
+import MfsDeposit from "../models/MfsDeposit.js";
+import AutoWithdraw from "../models/AutoWithdraw.js";
+import AffWithdrawRequest from "../models/AffWithdrawRequest.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
 import { successResponse, errorResponse } from "../utils/response.js";
 
@@ -29,34 +32,100 @@ const sumField = async (Model, match = {}, field = "amount") => {
 };
 
 // Accepts "YYYY-MM-DD" (from the calendar) and returns that day's
-// [start, end] bounds in server-local time; defaults to today when no
-// valid date is given.
+// [start, end] bounds as a Bangladesh day (UTC+6) — the VPS clock may run
+// in any timezone; defaults to today when no valid date is given.
+const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
+
 const dayRange = (dateStr) => {
-  const parsed = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
-  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
+  const bdNow = new Date(Date.now() + BD_OFFSET_MS);
 
-  const start = new Date(
-    base.getFullYear(),
-    base.getMonth(),
-    base.getDate(),
-    0,
-    0,
-    0,
-    0,
-  );
+  const [y, m, d] = match
+    ? [Number(match[1]), Number(match[2]) - 1, Number(match[3])]
+    : [bdNow.getUTCFullYear(), bdNow.getUTCMonth(), bdNow.getUTCDate()];
 
-  const end = new Date(
-    base.getFullYear(),
-    base.getMonth(),
-    base.getDate(),
-    23,
-    59,
-    59,
-    999,
-  );
+  const start = new Date(Date.UTC(y, m, d) - BD_OFFSET_MS);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const pad = (n) => String(n).padStart(2, "0");
 
-  return { start, end, dateStr: start.toISOString().slice(0, 10) };
+  return { start, end, dateStr: `${y}-${pad(m + 1)}-${pad(d)}` };
 };
+
+// Money is counted on the day it really moved (approved / paid / completed)
+const DONE = {
+  manualDeposit: { Model: DepositRequest, match: { status: "approved" }, at: "approvedAt" },
+  autoDeposit: { Model: AutoDeposit, match: { status: "PAID" }, at: "paidAt" },
+  personalDeposit: { Model: MfsDeposit, match: { status: "PAID" }, at: "paidAt" },
+  manualWithdraw: { Model: WithdrawRequest, match: { status: "approved" }, at: "approvedAt" },
+  autoWithdraw: { Model: AutoWithdraw, match: { status: "COMPLETED" }, at: "completedAt" },
+};
+
+const doneTotal = async ({ Model, match, at }, range) => {
+  const result = await Model.aggregate([
+    { $match: { ...match, ...(range ? { [at]: { $gte: range.start, $lte: range.end } } : {}) } },
+    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+  ]);
+
+  return { total: num(result?.[0]?.total), count: num(result?.[0]?.count) };
+};
+
+// Every money path, all time and for one day — the breakdown cards
+const moneyBreakdown = async (range) => {
+  const keys = Object.keys(DONE);
+  const rows = await Promise.all(
+    keys.map(async (key) => {
+      const [all, day] = await Promise.all([doneTotal(DONE[key]), doneTotal(DONE[key], range)]);
+      return [key, { total: all.total, count: all.count, today: day.total, todayCount: day.count }];
+    }),
+  );
+
+  return Object.fromEntries(rows);
+};
+
+/*
+ * Requests waiting for an admin, keyed by the sidebar menu key — used for
+ * the sidebar badges, the top bar bell and the dashboard's "Waiting for you".
+ * Auto deposit PENDING rows are mostly payment pages left open, so only the
+ * ones the gateway sent details for are counted; personal auto deposit only
+ * counts the ones the gateway could not match.
+ */
+const pendingCounts = async () => {
+  const [deposit, autoDeposit, personalDeposit, withdraw, autoWithdraw, affWithdraw, affiliates] =
+    await Promise.all([
+      DepositRequest.countDocuments({ status: "pending" }),
+      AutoDeposit.countDocuments({ status: "PENDING", transactionId: { $nin: ["", null] } }),
+      MfsDeposit.countDocuments({ status: "PENDING", needsReview: true }),
+      WithdrawRequest.countDocuments({ status: "pending" }),
+      AutoWithdraw.countDocuments({ status: { $in: ["PENDING", "PROCESSING"] } }),
+      AffWithdrawRequest.countDocuments({ status: "pending" }),
+      // new affiliates stay inactive until an admin approves them
+      User.countDocuments({ role: "aff-user", isActive: false }),
+    ]);
+
+  return {
+    "deposit-requests": deposit,
+    "auto-deposit-history": autoDeposit,
+    "mfs-deposit-history": personalDeposit,
+    "withdraw-requests": withdraw,
+    "auto-withdraw-history": autoWithdraw,
+    "aff-withdraw-requests": affWithdraw,
+    "all-affiliate-users": affiliates,
+  };
+};
+
+router.get("/pending", protectAdmin, async (req, res) => {
+  try {
+    const counts = await pendingCounts();
+    res.set("Cache-Control", "no-store");
+
+    return successResponse(res, "Pending counts loaded", {
+      counts,
+      total: Object.values(counts).reduce((sum, n) => sum + n, 0),
+    });
+  } catch (error) {
+    return errorResponse(res, error.message || "Failed to load pending counts", 500);
+  }
+});
 
 router.get("/summary", protectAdmin, async (req, res) => {
   try {
@@ -81,6 +150,9 @@ router.get("/summary", protectAdmin, async (req, res) => {
       latestDeposits,
       latestAutoDeposits,
       latestWithdraws,
+
+      breakdown,
+      pending,
     ] = await Promise.all([
       User.countDocuments({ role: "user" }),
       User.countDocuments({ role: "user", isActive: true }),
@@ -124,10 +196,19 @@ router.get("/summary", protectAdmin, async (req, res) => {
         .populate("user", "userId phone")
         .select("user amount status createdAt")
         .lean(),
+
+      moneyBreakdown(dayRange()),
+      pendingCounts(),
     ]);
 
     const allDepositBalances =
-      approvedManualDepositAmount + approvedAutoDepositAmount;
+      approvedManualDepositAmount +
+      approvedAutoDepositAmount +
+      breakdown.personalDeposit.total;
+    const allWithdrawBalances = approvedWithdrawAmount + breakdown.autoWithdraw.total;
+    const pendingDepositAll =
+      pendingDepositRequest + pendingAutoDepositCount + pending["mfs-deposit-history"];
+    const pendingWithdrawAll = pendingWithdrawRequest + pending["auto-withdraw-history"];
 
     const totalUsersForChart = allUsers;
     const inactiveUsers = Math.max(totalUsersForChart - activeUsers, 0);
@@ -140,10 +221,13 @@ router.get("/summary", protectAdmin, async (req, res) => {
         allDepositBalances,
         allGames,
         activeGames,
-        allWithdrawBalances: approvedWithdrawAmount,
-        pendingDepositRequest: pendingDepositRequest + pendingAutoDepositCount,
-        pendingWithdrawRequest,
+        allWithdrawBalances,
+        pendingDepositRequest: pendingDepositAll,
+        pendingWithdrawRequest: pendingWithdrawAll,
       },
+
+      breakdown,
+      pending,
 
       chart: {
         users: {
@@ -151,10 +235,10 @@ router.get("/summary", protectAdmin, async (req, res) => {
           inactive: inactiveUsers,
         },
         requests: {
-          pendingDeposit: pendingDepositRequest + pendingAutoDepositCount,
-          pendingWithdraw: pendingWithdrawRequest,
+          pendingDeposit: pendingDepositAll,
+          pendingWithdraw: pendingWithdrawAll,
           approvedDepositAmount: allDepositBalances,
-          approvedWithdrawAmount,
+          approvedWithdrawAmount: allWithdrawBalances,
         },
       },
 
@@ -199,13 +283,12 @@ router.get("/today", protectAdmin, async (req, res) => {
       activeGames,
 
       pendingDepositRequest,
-      approvedManualDepositAmount,
-
       pendingAutoDepositCount,
-      approvedAutoDepositAmount,
-
       pendingWithdrawRequest,
-      approvedWithdrawAmount,
+      pendingPersonalDeposit,
+      pendingAutoWithdraw,
+
+      dayMoney,
     ] = await Promise.all([
       User.countDocuments({ role: "user", createdAt }),
       User.countDocuments({ role: "user", isActive: true, createdAt }),
@@ -215,17 +298,16 @@ router.get("/today", protectAdmin, async (req, res) => {
       Game.countDocuments({ status: "active", createdAt }),
 
       DepositRequest.countDocuments({ status: "pending", createdAt }),
-      sumField(DepositRequest, { status: "approved", createdAt }, "amount"),
-
-      AutoDeposit.countDocuments({ status: "PENDING", createdAt }),
-      sumField(AutoDeposit, { status: "PAID", createdAt }, "amount"),
-
+      AutoDeposit.countDocuments({ status: "PENDING", transactionId: { $nin: ["", null] }, createdAt }),
       WithdrawRequest.countDocuments({ status: "pending", createdAt }),
-      sumField(WithdrawRequest, { status: "approved", createdAt }, "amount"),
+      MfsDeposit.countDocuments({ status: "PENDING", needsReview: true, createdAt }),
+      AutoWithdraw.countDocuments({ status: { $in: ["PENDING", "PROCESSING"] }, createdAt }),
+
+      Promise.all(Object.keys(DONE).map((key) => doneTotal(DONE[key], { start, end }))),
     ]);
 
-    const allDepositBalances =
-      approvedManualDepositAmount + approvedAutoDepositAmount;
+    const day = Object.fromEntries(Object.keys(DONE).map((key, i) => [key, dayMoney[i].total]));
+    const allDepositBalances = day.manualDeposit + day.autoDeposit + day.personalDeposit;
 
     return successResponse(res, "Dashboard today summary loaded", {
       date: dateStr,
@@ -236,10 +318,12 @@ router.get("/today", protectAdmin, async (req, res) => {
         allDepositBalances,
         allGames,
         activeGames,
-        allWithdrawBalances: approvedWithdrawAmount,
-        pendingDepositRequest: pendingDepositRequest + pendingAutoDepositCount,
-        pendingWithdrawRequest,
+        allWithdrawBalances: day.manualWithdraw + day.autoWithdraw,
+        pendingDepositRequest:
+          pendingDepositRequest + pendingAutoDepositCount + pendingPersonalDeposit,
+        pendingWithdrawRequest: pendingWithdrawRequest + pendingAutoWithdraw,
       },
+      money: day,
     });
   } catch (error) {
     console.error("DASHBOARD TODAY ERROR:", error);

@@ -68,6 +68,8 @@ import { motion } from "framer-motion";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../../features/auth/authSlice";
 import { selectAdmin } from "../../features/auth/authSelectors";
+import PendingBadge from "../PendingBadge/PendingBadge";
+import { PENDING_ITEMS, usePending } from "../../features/pending/usePending";
 
 const Sidebar = () => {
   const dispatch = useDispatch();
@@ -84,6 +86,9 @@ const Sidebar = () => {
   const [clientOpen, setClientOpen] = useState(false);
   const [affiliateOpen, setAffiliateOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+  const [bellOpen, setBellOpen] = useState(false);
+
+  const { counts: pending } = usePending();
 
   const adminRole = admin?.role === "mother" ? "mother" : "sub";
   const permissions = Array.isArray(admin?.permissions)
@@ -644,6 +649,14 @@ const Sidebar = () => {
     visibleAffiliateSiteItems.length,
   ]);
 
+  const pendingList = PENDING_ITEMS.filter(
+    (item) => canAccess(item.key) && Number(pending[item.key] || 0) > 0,
+  );
+  const pendingTotal = pendingList.reduce(
+    (sum, item) => sum + Number(pending[item.key] || 0),
+    0,
+  );
+
   const handleLogout = () => {
     dispatch(logout());
     navigate("/login", { replace: true });
@@ -659,7 +672,10 @@ const Sidebar = () => {
           <RxHamburgerMenu className="text-2xl text-white" />
         </button>
 
-        <h2 className="text-lg font-black">Admin</h2>
+        <h2 className="flex items-center gap-2 text-lg font-black">
+          Admin
+          <PendingBadge count={pendingTotal} />
+        </h2>
 
         <NavLink to="/profile">
           <FaUserCircle className="text-2xl text-white hover:text-blue-100 transition-colors cursor-pointer" />
@@ -736,6 +752,7 @@ const Sidebar = () => {
                   open={usersOpen}
                   setOpen={setUsersOpen}
                   items={visibleUserItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -747,6 +764,7 @@ const Sidebar = () => {
                   open={depositOpen}
                   setOpen={setDepositOpen}
                   items={visibleDepositItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -758,6 +776,7 @@ const Sidebar = () => {
                   open={withdrawOpen}
                   setOpen={setWithdrawOpen}
                   items={visibleWithdrawItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -769,6 +788,7 @@ const Sidebar = () => {
                   open={gameOpen}
                   setOpen={setGameOpen}
                   items={visibleGameItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -780,6 +800,7 @@ const Sidebar = () => {
                   open={rewardOpen}
                   setOpen={setRewardOpen}
                   items={visibleRewardItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -791,6 +812,7 @@ const Sidebar = () => {
                   open={clientOpen}
                   setOpen={setClientOpen}
                   items={visibleClientSiteItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -802,6 +824,7 @@ const Sidebar = () => {
                   open={affiliateOpen}
                   setOpen={setAffiliateOpen}
                   items={visibleAffiliateSiteItems}
+                  pending={pending}
                   onClose={() => setOpen(false)}
                 />
               )}
@@ -833,10 +856,54 @@ const Sidebar = () => {
             </div>
 
             <div className="flex items-center gap-6">
-              <button className="relative p-2.5 hover:bg-[#1A79D3]/15 rounded-xl transition-colors cursor-pointer">
-                <FaBell className="text-xl text-[#3ea0ff]" />
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-red-300/60"></span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setBellOpen((v) => !v)}
+                  className="relative p-2.5 hover:bg-[#1A79D3]/15 rounded-xl transition-colors cursor-pointer"
+                  title="Pending requests"
+                >
+                  <FaBell className="text-xl text-[#3ea0ff]" />
+                  {pendingTotal > 0 ? (
+                    <PendingBadge
+                      count={pendingTotal}
+                      className="absolute -top-1 -right-1"
+                    />
+                  ) : null}
+                </button>
+
+                {bellOpen ? (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setBellOpen(false)}
+                    />
+                    <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-80 overflow-hidden rounded-2xl border border-[#1A79D3]/25 bg-[#06182a] shadow-2xl shadow-black/60">
+                      <div className="border-b border-[#1A79D3]/20 px-4 py-3 text-sm font-black text-white">
+                        Waiting for you
+                      </div>
+
+                      {pendingList.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-sm text-slate-300">
+                          Nothing is waiting right now
+                        </div>
+                      ) : (
+                        pendingList.map((item) => (
+                          <NavLink
+                            key={item.key}
+                            to={item.to}
+                            onClick={() => setBellOpen(false)}
+                            className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-200 transition-colors hover:bg-[#1A79D3]/15 hover:text-white"
+                          >
+                            <span>{item.label}</span>
+                            <PendingBadge count={pending[item.key]} />
+                          </NavLink>
+                        ))
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
 
               <NavLink
                 to="/profile"
@@ -858,7 +925,13 @@ const Sidebar = () => {
   );
 };
 
-const DropdownSection = ({ title, icon, open, setOpen, items, onClose }) => {
+const DropdownSection = ({ title, icon, open, setOpen, items, pending = {}, onClose }) => {
+  // waiting requests inside the group — visible even while it is closed
+  const groupCount = items.reduce(
+    (sum, item) => sum + Number(pending[item.key] || 0),
+    0,
+  );
+
   return (
     <div className="mt-4">
       <button
@@ -870,7 +943,10 @@ const DropdownSection = ({ title, icon, open, setOpen, items, onClose }) => {
           <span className="font-semibold">{title}</span>
         </div>
 
-        {open ? <FaChevronUp size={18} /> : <FaChevronDown size={18} />}
+        <div className="flex items-center gap-2">
+          <PendingBadge count={groupCount} />
+          {open ? <FaChevronUp size={18} /> : <FaChevronDown size={18} />}
+        </div>
       </button>
 
       {open && (
@@ -890,6 +966,7 @@ const DropdownSection = ({ title, icon, open, setOpen, items, onClose }) => {
             >
               <span className="text-xl opacity-90">{sub.icon}</span>
               <span>{sub.text}</span>
+              <PendingBadge count={Number(pending[sub.key] || 0)} className="ms-auto" />
             </NavLink>
           ))}
         </div>
