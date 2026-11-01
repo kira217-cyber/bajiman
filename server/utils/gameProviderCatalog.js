@@ -1,5 +1,6 @@
 import axios from "axios";
 import GameApiKeySetting from "../models/GameApiKeySetting.js";
+import { isNineWicketUid } from "./nineWicket.js";
 
 // Resolves a real played game's gameUId -> providerCode for turnover
 // provider gating (see callbackRoutes.js). The locally-synced Game/
@@ -125,6 +126,9 @@ export const getGameProviderCodeMap = async () => {
 };
 
 export const resolveProviderCodeFromCatalog = async (gameUId) => {
+  // 9 Wicket is not in the catalog — its own code for turnover rules
+  if (await isNineWicketUid(gameUId)) return "9W";
+
   const map = await getGameProviderCodeMap();
   return map.get(String(gameUId || "").trim()) || null;
 };

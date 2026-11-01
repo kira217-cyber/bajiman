@@ -429,8 +429,24 @@ const AllGameHistory = () => {
                         </div>
                       </td>
 
-                      <td className="max-w-[170px] break-all px-4 py-3 text-sm font-bold text-white">
+                      <td className="max-w-[220px] break-all px-4 py-3 text-sm font-bold text-white">
                         {x.game_name || "-"}
+                        {/* 9 Wicket — match, market and stake */}
+                        {x.providerCode === "9W" ? (
+                          <div className="mt-1 text-xs font-normal leading-snug text-slate-300">
+                            {x.eventName ? (
+                              <div className="font-semibold text-white">{x.eventName}</div>
+                            ) : null}
+                            {[x.eventTypeName, x.competitionName, x.marketName]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            <div className="text-slate-400">
+                              Stake ৳ {fmtMoney(x.matchStake)}
+                              {x.profitLoss ? ` · P/L ৳ ${fmtMoney(x.profitLoss)}` : ""}
+                              {x.nineWicketBetStatus ? ` · ${x.nineWicketBetStatus}` : ""}
+                            </div>
+                          </div>
+                        ) : null}
                       </td>
 
                       <td className="max-w-[170px] break-all px-4 py-3 text-xs text-slate-300">
@@ -479,6 +495,11 @@ const AllGameHistory = () => {
 
                       <td className="px-4 py-3 text-slate-200">
                         ৳ {fmtMoney(x.balance_after)}
+                        {x.providerCode === "9W" ? (
+                          <div className="mt-1 text-xs font-semibold text-amber-300">
+                            Exposure ৳ {fmtMoney(x.exposureAfter)}
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   ))

@@ -296,6 +296,20 @@ const BetHistoryModal = () => {
                       >
                         {t.date}: {formatDate(item?.createdAt)}
                       </p>
+
+                      {item?.providerCode === "9W" ? (
+                        <p
+                          className="mt-1 text-[12px] leading-snug"
+                          style={{ color: colors.mutedText }}
+                        >
+                          {[item?.eventName, item?.marketName].filter(Boolean).join(" · ")}
+                          <span className="block">
+                            {isBangla ? "স্টেক" : "Stake"} {money(item?.matchStake)} ·{" "}
+                            {isBangla ? "এক্সপোজার" : "Exposure"} {money(item?.exposureAfter)}
+                            {item?.nineWicketBetStatus ? ` · ${item.nineWicketBetStatus}` : ""}
+                          </span>
+                        </p>
+                      ) : null}
                     </div>
 
                     <span

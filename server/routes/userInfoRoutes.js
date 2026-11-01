@@ -3,6 +3,15 @@ import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import protectUser from "../middleware/protectUser.js";
 import { successResponse, errorResponse } from "../utils/response.js";
+import { syncNineWicketBalance } from "../utils/nineWicket.js";
+
+// Money left in 9 Wicket comes back before the balance is read — at most
+// 3 seconds of waiting; if Oracle is slow it comes back on the next refresh
+const syncNineWicket = (userId) =>
+  Promise.race([
+    syncNineWicketBalance(userId),
+    new Promise((resolve) => setTimeout(() => resolve({ added: 0, exposure: 0 }), 3000)),
+  ]);
 
 const router = express.Router();
 
@@ -49,6 +58,7 @@ const safeUser = (user) => {
 ========================= */
 router.get("/me", protectUser, async (req, res) => {
   try {
+    const sync = await syncNineWicket(req.user.id);
     const user = await User.findById(req.user.id).select("-password");
 
     if (!user) {
@@ -56,7 +66,7 @@ router.get("/me", protectUser, async (req, res) => {
     }
 
     return successResponse(res, "User info fetched successfully", {
-      user: safeUser(user),
+      user: { ...safeUser(user), nineWicketExposure: Number(sync.exposure || 0) },
     });
   } catch (error) {
     return errorResponse(
@@ -200,6 +210,7 @@ router.patch("/change-password", protectUser, async (req, res) => {
 ========================= */
 router.get("/balance", protectUser, async (req, res) => {
   try {
+    const sync = await syncNineWicket(req.user.id);
     const user = await User.findById(req.user.id).select(
       "balance currency commissionBalance gameLossCommissionBalance depositCommissionBalance referCommissionBalance gameWinCommissionBalance",
     );
@@ -216,6 +227,8 @@ router.get("/balance", protectUser, async (req, res) => {
       depositCommissionBalance: Number(user.depositCommissionBalance || 0),
       referCommissionBalance: Number(user.referCommissionBalance || 0),
       gameWinCommissionBalance: Number(user.gameWinCommissionBalance || 0),
+      // money held in open 9 Wicket bets
+      nineWicketExposure: Number(sync.exposure || 0),
     });
   } catch (error) {
     return errorResponse(res, error.message || "Failed to fetch balance", 500);

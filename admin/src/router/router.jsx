@@ -45,6 +45,7 @@ import WithdrawRequestDetails from "../pages/WithdrawRequestDetails/WithdrawRequ
 // import AddHotGame from "../pages/AddHotGame/AddHotGame";
 
 import AllGameHistory from "../pages/AllGameHistory/AllGameHistory";
+import NineWicket from "../pages/NineWicket/NineWicket";
 import AddPromotion from "../pages/AddPromotion/AddPromotion";
 import AddFavouriteBanner from "../pages/AddFavouriteBanner/AddFavouriteBanner";
 import AddSlider from "../pages/AddSlider/AddSlider";
@@ -399,6 +400,14 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="add-game-history">
             <AllGameHistory />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "nine-wicket",
+        element: (
+          <PrivateRoute permKey="nine-wicket">
+            <NineWicket />
           </PrivateRoute>
         ),
       },

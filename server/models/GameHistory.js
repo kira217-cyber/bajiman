@@ -70,6 +70,26 @@ const gameHistorySchema = new Schema(
     },
 
     oracleTimestamp: { type: String, default: "", trim: true },
+
+    /*
+     * 9 Wicket (providerCode "9W"). The callback never touches the main
+     * balance (the money went to 9 Wicket when the game opened), so
+     * balance_before = balance_after; the bet details live here.
+     */
+    providerCode: { type: String, default: "", trim: true, uppercase: true, index: true },
+    gameName: { type: String, default: "", trim: true },
+    nineWicketUsername: { type: String, default: "", trim: true, lowercase: true },
+    nineWicketBetId: { type: String, default: "", trim: true },
+    nineWicketBetStatus: { type: String, default: "", trim: true },
+    matchStake: { type: Number, default: 0 },
+    profitLoss: { type: Number, default: 0 },
+    eventTypeName: { type: String, default: "", trim: true },
+    eventName: { type: String, default: "", trim: true },
+    marketName: { type: String, default: "", trim: true },
+    competitionName: { type: String, default: "", trim: true },
+    // how much this callback moved the exposure, and what is left
+    exposureChange: { type: Number, default: 0 },
+    exposureAfter: { type: Number, default: 0 },
     rawPayload: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },

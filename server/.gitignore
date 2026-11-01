@@ -1,3 +1,4 @@
 .env
-uploads
+uploads/*
+!uploads/nine-wicket.png
 node_modules

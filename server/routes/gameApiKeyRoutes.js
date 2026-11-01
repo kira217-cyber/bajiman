@@ -4,6 +4,7 @@ import axios from "axios";
 import GameApiKeySetting from "../models/GameApiKeySetting.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
 import { successResponse, errorResponse } from "../utils/response.js";
+import { withNineWicketSports } from "../utils/nineWicket.js";
 
 const router = express.Router();
 
@@ -375,6 +376,11 @@ router.get("/client/game-data", async (req, res) => {
     );
 
     const cappedPayload = capGameDataPayload(response.data);
+
+    // 9 Wicket is not in the White-label catalog — added to Sports while on
+    if (cappedPayload?.data) {
+      cappedPayload.data.sports = await withNineWicketSports(req, cappedPayload.data.sports);
+    }
 
     return res.status(response.status || 200).json(cappedPayload);
   } catch (error) {

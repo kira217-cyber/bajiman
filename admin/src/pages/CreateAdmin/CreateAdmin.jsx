@@ -173,6 +173,11 @@ const CreateAdmin = () => {
         label: "All Game History",
         path: "/all-game-history",
       },
+      {
+        key: "nine-wicket",
+        label: "9 Wicket",
+        path: "/nine-wicket",
+      },
 
       {
         key: "add-promotion",

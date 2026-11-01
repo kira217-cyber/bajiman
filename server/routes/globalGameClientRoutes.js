@@ -10,6 +10,7 @@ import PopularGame from "../models/PopularGame.js";
 import Sport from "../models/Sport.js";
 
 import { successResponse, errorResponse } from "../utils/response.js";
+import { withNineWicketSports } from "../utils/nineWicket.js";
 
 const router = express.Router();
 
@@ -405,7 +406,11 @@ router.get("/game-data", async (req, res) => {
         return formatPopularGame(req, item, gameMap[key] || null);
       }),
 
-      sports: cappedSports.map((item) => formatSport(req, item)),
+      // 9 Wicket is not one of the site's games — added while it is on
+      sports: await withNineWicketSports(
+        req,
+        cappedSports.map((item) => formatSport(req, item)),
+      ),
 
       gamesByCategory,
       gamesByProvider,

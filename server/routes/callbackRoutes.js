@@ -3,6 +3,13 @@ import User from "../models/User.js";
 import TurnOver from "../models/TurnOver.js";
 import GameHistory from "../models/GameHistory.js";
 import { resolveProviderCodeFromCatalog } from "../utils/gameProviderCatalog.js";
+import {
+  applyNineWicketExposure,
+  isNineWicketUid,
+  loadNineWicketSetting,
+  nineWicketInfo,
+  nineWicketNameOf,
+} from "../utils/nineWicket.js";
 
 const router = express.Router();
 
@@ -260,6 +267,119 @@ const applyAffiliateCommission = async ({ player, netAmount }) => {
   };
 };
 
+/* ----------------------------- 9 WICKET CALLBACK ----------------------------- */
+// The main balance is not changed (the whole balance went to 9 Wicket when the
+// game opened and comes back on a balance refresh). Each callback is one
+// history row, an exposure update and — for bets — turnover. The reply's
+// `balance` is the current main balance.
+const handleNineWicket = async ({ body, gameUId, gameRound, serialNumber, rawMemberAccount, betAmount, winAmount, currency, timestamp }) => {
+  const nine = body?.nine_wicket || {};
+  const username = nineWicketNameOf(rawMemberAccount);
+
+  if (!username) {
+    return { success: false, balance: 0, message: "INVALID_NINE_WICKET_USERNAME" };
+  }
+
+  const seen = await GameHistory.findOne({ serial_number: serialNumber }).select("balance_after").lean();
+  if (seen) return { success: true, balance: seen.balance_after || 0, message: "DUPLICATE" };
+
+  const player = await User.findOne({ nineWicketUsername: username, isActive: true });
+  if (!player) return { success: false, balance: 0, message: "USER_NOT_FOUND" };
+
+  const matchStake = Math.max(0, money(nine.matchStake ?? nine.matchAmount ?? 0));
+  const netAmount = money(winAmount - betAmount);
+  const resultType = netAmount > 0 ? "win" : netAmount < 0 ? "loss" : "push";
+  const balance = money(player.balance || 0);
+
+  await loadNineWicketSetting();
+  const info = nineWicketInfo();
+
+  const exposure = await applyNineWicketExposure({
+    userId: player._id,
+    username,
+    gameRound,
+    betAmount,
+    winAmount,
+    matchStake,
+  });
+
+  const history = await GameHistory.create({
+    user: player._id,
+    userId: player.userId,
+    // required field — the 9 Wicket name when the player has no 10-letter one
+    userGamePlayName: player.userGamePlayName || username,
+    member_account: rawMemberAccount,
+    phone: `${player.countryCode || ""}${player.phone || ""}`,
+    email: player.email || "",
+    currency: currency || player.currency || "BDT",
+    userRole: player.role || "user",
+
+    game_uid: gameUId,
+    game_round: gameRound,
+    serial_number: serialNumber,
+
+    bet_amount: betAmount,
+    win_amount: winAmount,
+    net_amount: netAmount,
+    resultType,
+
+    balance_before: balance,
+    balance_after: balance,
+
+    providerCode: info.code,
+    gameName: info.name,
+    nineWicketUsername: username,
+    nineWicketBetId: clean(nine.betId),
+    nineWicketBetStatus: clean(nine.betStatus),
+    matchStake,
+    profitLoss: money(nine.profitLoss || 0),
+    eventTypeName: clean(nine.eventTypeName),
+    eventName: clean(nine.eventName),
+    marketName: clean(nine.marketName),
+    competitionName: clean(nine.competitionName),
+    exposureChange: exposure.change,
+    exposureAfter: exposure.after,
+
+    oracleTimestamp: clean(timestamp),
+    rawPayload: body || {},
+  });
+
+  // Bets count for turnover only — the real money moves inside 9 Wicket,
+  // so no affiliate commission here
+  if (betAmount > 0) {
+    const turnoverApplied = await applyTurnoverProgress({
+      userId: player._id,
+      gameUId,
+      wagerAmount: betAmount,
+    });
+
+    if (turnoverApplied) {
+      await GameHistory.updateOne({ _id: history._id }, { $set: { turnoverApplied: true } });
+    }
+  }
+
+  return {
+    success: true,
+    balance,
+    message: "SUCCESS",
+    data: {
+      status: "SUCCESS",
+      provider: "ninewicket",
+      resultType,
+      betAmount,
+      winAmount,
+      netAmount,
+      matchStake,
+      exposureAction: exposure.action,
+      exposureChange: exposure.change,
+      exposureBalance: exposure.after,
+      game_round: gameRound,
+      serial_number: serialNumber,
+      historyId: history._id,
+    },
+  };
+};
+
 /* ----------------------------- ORACLE CALLBACK ----------------------------- */
 router.post("/", async (req, res) => {
   try {
@@ -304,6 +424,23 @@ router.post("/", async (req, res) => {
         balance: 0,
         message: "Invalid amount",
       });
+    }
+
+    // 9 Wicket — the money already went over; only history and exposure here
+    if (await isNineWicketUid(gameUId)) {
+      return res.status(200).json(
+        await handleNineWicket({
+          body: req.body || {},
+          gameUId,
+          gameRound,
+          serialNumber,
+          rawMemberAccount,
+          betAmount,
+          winAmount,
+          currency: clean(currency_code),
+          timestamp,
+        }),
+      );
     }
 
     const duplicate = await GameHistory.findOne({

@@ -56,6 +56,7 @@ const MfsReturnNotice = () => {
             updateUser({
               balance: Number(bal.balance || 0),
               currency: bal.currency || "BDT",
+              nineWicketExposure: Number(bal.nineWicketExposure || 0),
             }),
           );
         } else if (deposit.status === "FAILED") {

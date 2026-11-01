@@ -84,6 +84,7 @@ const BalanceSection = () => {
           depositCommissionBalance: Number(data.depositCommissionBalance || 0),
           referCommissionBalance: Number(data.referCommissionBalance || 0),
           gameWinCommissionBalance: Number(data.gameWinCommissionBalance || 0),
+          nineWicketExposure: Number(data.nineWicketExposure || 0),
         }),
       );
 
@@ -134,6 +135,10 @@ const BalanceSection = () => {
                 style={{ color: colors.balanceText }}
               >
                 ৳ {balance}
+              </p>
+              {/* money held in open 9 Wicket bets */}
+              <p className="text-[11px] font-semibold leading-tight text-amber-300">
+                Exp {Number(user?.nineWicketExposure || 0).toFixed(2)}
               </p>
             </div>
           </div>

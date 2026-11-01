@@ -32,6 +32,7 @@ import {
   FaKey,
   FaTools,
   FaMobileAlt,
+  FaTrophy,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
 import {
@@ -350,6 +351,12 @@ const Sidebar = () => {
         to: "/all-game-history",
         icon: <FaHistory />,
         text: "All Game History",
+      },
+      {
+        key: "nine-wicket",
+        to: "/nine-wicket",
+        icon: <FaTrophy />,
+        text: "9 Wicket",
       },
     ],
     [],

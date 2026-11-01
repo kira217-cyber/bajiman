@@ -85,7 +85,8 @@ const withGameNames = async (items) => {
 
   return items.map((item) => ({
     ...item,
-    game_name: nameMap.get(item.game_uid) || "",
+    // 9 Wicket rows carry their own name
+    game_name: nameMap.get(item.game_uid) || item.gameName || "",
   }));
 };
 
@@ -178,6 +179,11 @@ router.get("/admin", protectAdmin, async (req, res) => {
         { userId: { $regex: q, $options: "i" } },
         { userGamePlayName: { $regex: q, $options: "i" } },
         { member_account: { $regex: q, $options: "i" } },
+        // 9 Wicket — match, market, competition and the 9 Wicket name
+        { eventName: { $regex: q, $options: "i" } },
+        { marketName: { $regex: q, $options: "i" } },
+        { competitionName: { $regex: q, $options: "i" } },
+        { nineWicketUsername: { $regex: q, $options: "i" } },
         { game_uid: { $regex: q, $options: "i" } },
         { game_round: { $regex: q, $options: "i" } },
         { serial_number: { $regex: q, $options: "i" } },

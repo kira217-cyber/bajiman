@@ -221,7 +221,21 @@ const Navber = ({ setOpen, desktopOpen }) => {
 
   useEffect(() => {
     if (isAuth) {
-      fetchReferRedeemInfo();
+      // the balance endpoint first brings back money left in 9 Wicket
+      // (returning from the game), then the refer info reads the new balance
+      api
+        .get("/api/user-info/balance")
+        .then((res) => {
+          const data = res?.data?.data || {};
+          dispatch(
+            updateUser({
+              balance: Number(data.balance || 0),
+              nineWicketExposure: Number(data.nineWicketExposure || 0),
+            }),
+          );
+        })
+        .catch(() => {})
+        .finally(() => fetchReferRedeemInfo());
     } else {
       setReferInfo(null);
     }
@@ -359,6 +373,7 @@ const Navber = ({ setOpen, desktopOpen }) => {
           depositCommissionBalance: Number(data.depositCommissionBalance || 0),
           referCommissionBalance: Number(data.referCommissionBalance || 0),
           gameWinCommissionBalance: Number(data.gameWinCommissionBalance || 0),
+          nineWicketExposure: Number(data.nineWicketExposure || 0),
         }),
       );
 
@@ -554,7 +569,13 @@ const Navber = ({ setOpen, desktopOpen }) => {
                     className={refreshingBalance ? "animate-spin" : ""}
                   />
                   <span>{texts.mainWallet}</span>
-                  <span>৳{balance}</span>
+                  <span className="flex flex-col items-start leading-[1.1]">
+                    <span>৳{balance}</span>
+                    {/* money held in open 9 Wicket bets */}
+                    <span className="text-[10px] font-semibold text-amber-300">
+                      Exp {Number(user?.nineWicketExposure || 0).toFixed(2)}
+                    </span>
+                  </span>
                 </button>
 
                 <div ref={profileRef} className="relative">

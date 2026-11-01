@@ -268,6 +268,7 @@ const AccountModal = ({
           depositCommissionBalance: Number(data.depositCommissionBalance || 0),
           referCommissionBalance: Number(data.referCommissionBalance || 0),
           gameWinCommissionBalance: Number(data.gameWinCommissionBalance || 0),
+          nineWicketExposure: Number(data.nineWicketExposure || 0),
         }),
       );
     } catch (error) {

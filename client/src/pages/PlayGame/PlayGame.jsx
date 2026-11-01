@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useSelector } from "react-redux";
 import axios from "axios";
@@ -34,6 +34,9 @@ const PlayGame = () => {
 
   const uidFromQuery = searchParams.get("uid") || "";
 
+  // once sent to 9 Wicket, never launch again (the balance would be sent twice)
+  const redirecting = useRef(false);
+
   const t = (bn, en) => (isBangla ? bn : en);
 
   const isActiveUser = useMemo(() => {
@@ -56,6 +59,8 @@ const PlayGame = () => {
   };
 
   const launchGame = async () => {
+    if (redirecting.current) return;
+
     if (!gameId) {
       toast.error(t("গেম আইডি পাওয়া যায়নি", "Game ID not found"));
       navigate("/", { replace: true });
@@ -102,6 +107,14 @@ const PlayGame = () => {
       const data = res?.data || {};
       const url = extractLaunchUrl(data);
 
+      // 9 Wicket — the whole balance went there; it comes back to the main
+      // balance when the player returns and the balance is refreshed
+      if (url && data?.provider === "ninewicket") {
+        redirecting.current = true;
+        window.location.assign(url);
+        return;
+      }
+
       if (!url || typeof url !== "string") {
         setErrorText(t("গেম URL পাওয়া যায়নি", "No game URL received"));
         toast.error(t("গেম URL পাওয়া যায়নি", "No game URL received"));
@@ -113,8 +126,13 @@ const PlayGame = () => {
     } catch (error) {
       console.error("PlayGame launch error:", error?.response?.data || error);
 
+      const code = error?.response?.data?.code;
       const message =
-        error?.response?.data?.message ||
+        code === "lowBalance"
+          ? t("ব্যালেন্স নেই — আগে ডিপোজিট করুন", "No balance — please deposit first")
+          : code === "launchBusy"
+            ? t("গেম খোলা হচ্ছে, একটু অপেক্ষা করুন", "The game is already opening, please wait")
+            : error?.response?.data?.message ||
         t("গেম চালু করা যায়নি", "Failed to launch game");
 
       setErrorText(message);

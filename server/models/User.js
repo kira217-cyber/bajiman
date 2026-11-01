@@ -57,6 +57,15 @@ const userSchema = new Schema(
       match: /^[a-z]{10}$/,
     },
 
+    // 9 Wicket name — 6 lowercase letters, set the first time 9 Wicket opens.
+    // No default: a null would break the unique index for the second player.
+    nineWicketUsername: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      match: /^[a-z]{6}$/,
+    },
+
     email: {
       type: String,
       default: "",
@@ -217,6 +226,11 @@ const userSchema = new Schema(
 
 userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
 userSchema.index({ userGamePlayName: 1 }, { unique: true, sparse: true });
+// only players who have a 9 Wicket name — the rest never collide
+userSchema.index(
+  { nineWicketUsername: 1 },
+  { unique: true, partialFilterExpression: { nineWicketUsername: { $type: "string" } } },
+);
 userSchema.index({ role: 1, isActive: 1 });
 userSchema.index({ referredBy: 1 });
 userSchema.index({ countryCode: 1, phone: 1 }, { unique: true });

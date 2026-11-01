@@ -3,14 +3,10 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import User from "../models/User.js";
+import { ORACLE_GAME_LAUNCH_URL, ORACLE_LAUNCH_KEY } from "../utils/oracleLaunch.js";
+import { isNineWicketUid, launchNineWicket } from "../utils/nineWicket.js";
 
 const router = express.Router();
-
-const ORACLE_GAME_LAUNCH_URL =
-  process.env.ORACLE_GAME_LAUNCH_URL ||
-  "https://oraclegames.net/api/getgameurl";
-
-const ORACLE_LAUNCH_KEY = "665ec86d74fcb110d5a60421002b82df";
 
 const requireAuth = (req, res, next) => {
   try {
@@ -107,6 +103,44 @@ router.post("/playgame", requireAuth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "game_uid is required",
+      });
+    }
+
+    // 9 Wicket — transfer wallet: the whole balance is sent, then it opens
+    if (await isNineWicketUid(gameUId)) {
+      const result = await launchNineWicket({ _id: req.user?.id });
+
+      if (result.error) {
+        const messages = {
+          lowBalance: "No balance, please deposit",
+          balanceChanged: "Balance changed while opening the game. Please try again.",
+          launchBusy: "Game is already opening, please wait",
+          gameNotReady: "Game launch is not ready",
+          gameNotFound: "Game not found",
+          accountDisabled: "Your account is not active",
+        };
+
+        return res.status(result.status || 400).json({
+          success: false,
+          code: result.error,
+          message: messages[result.error] || result.message || "Failed to launch game",
+        });
+      }
+
+      return res.json({
+        success: true,
+        gameUrl: result.launchUrl,
+        launch_url: result.launchUrl,
+        // the client opens it in this tab, not in the iframe
+        provider: "ninewicket",
+        openType: "same_tab",
+        data: {
+          launch_url: result.launchUrl,
+          gameUrl: result.launchUrl,
+          game_uid: gameUId,
+          balance: result.balance,
+          transferred: result.amount,
+        },
       });
     }
 
