@@ -28,6 +28,8 @@ import DepositRequests from "../pages/DepositRequests/DepositRequests";
 import DepositRequestDetails from "../pages/DepositRequestDetails/DepositRequestDetails";
 import AutoDepositSettings from "../pages/AutoDepositSettings/AutoDepositSettings";
 import AutoDepositHistory from "../pages/AutoDepositHistory/AutoDepositHistory";
+import MfsDepositSettings from "../pages/MfsDepositSettings/MfsDepositSettings";
+import MfsDepositHistory from "../pages/MfsDepositHistory/MfsDepositHistory";
 import AutoWithdrawSettings from "../pages/AutoWithdrawSettings/AutoWithdrawSettings";
 import AutoWithdrawHistory from "../pages/AutoWithdrawHistory/AutoWithdrawHistory";
 import AddWithdraw from "../pages/AddWithdraw/AddWithdraw";
@@ -276,6 +278,22 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="auto-deposit-history">
             <AutoDepositHistory />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "mfs-deposit-settings",
+        element: (
+          <PrivateRoute permKey="mfs-deposit-settings">
+            <MfsDepositSettings />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "mfs-deposit-history",
+        element: (
+          <PrivateRoute permKey="mfs-deposit-history">
+            <MfsDepositHistory />
           </PrivateRoute>
         ),
       },

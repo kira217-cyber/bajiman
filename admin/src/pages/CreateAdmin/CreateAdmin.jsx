@@ -103,6 +103,16 @@ const CreateAdmin = () => {
         path: "/auto-deposit-history",
       },
       {
+        key: "mfs-deposit-settings",
+        label: "Personal Auto Deposit",
+        path: "/mfs-deposit-settings",
+      },
+      {
+        key: "mfs-deposit-history",
+        label: "Personal Auto Deposit History",
+        path: "/mfs-deposit-history",
+      },
+      {
         key: "add-turnover-history",
         label: "All Turnover History",
         path: "/all-turnover-history",

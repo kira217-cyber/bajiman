@@ -31,6 +31,7 @@ import {
   FaDownload,
   FaKey,
   FaTools,
+  FaMobileAlt,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
 import {
@@ -224,6 +225,18 @@ const Sidebar = () => {
         to: "/auto-deposit-history",
         icon: <FaReceipt />,
         text: "Auto Deposit History",
+      },
+      {
+        key: "mfs-deposit-settings",
+        to: "/mfs-deposit-settings",
+        icon: <FaMobileAlt />,
+        text: "Personal Auto Deposit",
+      },
+      {
+        key: "mfs-deposit-history",
+        to: "/mfs-deposit-history",
+        icon: <FaReceipt />,
+        text: "Personal Deposit History",
       },
       {
         key: "all-turnover-history",

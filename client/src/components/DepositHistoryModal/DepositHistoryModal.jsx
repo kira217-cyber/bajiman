@@ -13,6 +13,7 @@ import {
   Landmark,
   RotateCcw,
   Clock,
+  Smartphone,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-toastify";
@@ -20,6 +21,8 @@ import { useSelector } from "react-redux";
 import api from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import AutoDepositModalHistory from "../AutoDepositModalHistory/AutoDepositModalHistory";
+import MfsDepositHistory from "../MfsDepositHistory/MfsDepositHistory";
+import useMfsStatus from "../../hook/useMfsStatus";
 import WithdrawHistoryModal from "../WithdrawHistoryModal/WithdrawHistoryModal";
 import TurnoverHistoryModal from "../TurnoverHistoryModal/TurnoverHistoryModal";
 import BetHistoryModal from "../BetHistoryModal/BetHistoryModal";
@@ -148,6 +151,7 @@ const DepositHistoryModal = ({ open, onClose, onBackToDeposit }) => {
   };
 
   const [activeTab, setActiveTab] = useState("deposit");
+  const { enabled: mfsEnabled } = useMfsStatus(open);
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("all");
   const [searchInput, setSearchInput] = useState("");
@@ -162,6 +166,9 @@ const DepositHistoryModal = ({ open, onClose, onBackToDeposit }) => {
     autoDepositHistory: isBangla
       ? "অটো ডিপোজিট হিস্টোরি"
       : "Auto Deposit History",
+    personalDepositHistory: isBangla
+      ? "পার্সোনাল ডিপোজিট হিস্টোরি"
+      : "Personal Deposit History",
     turnoverHistory: isBangla ? "টার্নওভার হিস্টোরি" : "Turnover History",
 
     subtitle: isBangla
@@ -218,6 +225,16 @@ const DepositHistoryModal = ({ open, onClose, onBackToDeposit }) => {
       label: t.autoDepositHistory,
       icon: <Landmark size={16} />,
     },
+    // Only while Personal Auto Deposit is switched on
+    ...(mfsEnabled
+      ? [
+          {
+            key: "personalDeposit",
+            label: t.personalDepositHistory,
+            icon: <Smartphone size={16} />,
+          },
+        ]
+      : []),
     {
       key: "turnover",
       label: t.turnoverHistory,
@@ -758,6 +775,13 @@ const DepositHistoryModal = ({ open, onClose, onBackToDeposit }) => {
               </>
             ) : activeTab === "autoDeposit" ? (
               <AutoDepositModalHistory
+                onBackToDeposit={() => {
+                  onClose?.();
+                  onBackToDeposit?.();
+                }}
+              />
+            ) : activeTab === "personalDeposit" ? (
+              <MfsDepositHistory
                 onBackToDeposit={() => {
                   onClose?.();
                   onBackToDeposit?.();

@@ -17,6 +17,8 @@ import api from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import { selectIsAuth, selectUser } from "../../features/auth/authSelectors";
 import { selectModalColorSetting } from "../../features/global/globalSelectors";
+import useMfsStatus from "../../hook/useMfsStatus";
+import MfsDepositModal from "../MfsDepositModal/MfsDepositModal";
 
 const defaultModalColors = {
   modalBg: "#ffffff",
@@ -150,6 +152,8 @@ const AutoDepositModal = ({ open, onClose, onDepositClick }) => {
   const [selectedBonusId, setSelectedBonusId] = useState("none");
   const [bonusOpen, setBonusOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [personalOpen, setPersonalOpen] = useState(false);
+  const { enabled: mfsEnabled } = useMfsStatus(open);
 
   const t = {
     title: isBangla ? "ফান্ডস" : "Funds",
@@ -366,8 +370,21 @@ const AutoDepositModal = ({ open, onClose, onDepositClick }) => {
   };
 
   return (
+    <>
+    <MfsDepositModal
+      open={open && personalOpen}
+      onClose={() => {
+        setPersonalOpen(false);
+        onClose?.();
+      }}
+      onAutoClick={() => setPersonalOpen(false)}
+      onDepositClick={() => {
+        setPersonalOpen(false);
+        onDepositClick?.();
+      }}
+    />
     <AnimatePresence>
-      {open && (
+      {open && !personalOpen && (
         <div
           className="fixed inset-0 z-[100000] flex items-center justify-center px-0 backdrop-blur-[3px] sm:px-4"
           style={{ background: colors.pageOverlayBg }}
@@ -425,6 +442,20 @@ const AutoDepositModal = ({ open, onClose, onDepositClick }) => {
               >
                 {t.autoDeposit}
               </button>
+
+              {mfsEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => setPersonalOpen(true)}
+                  className="h-[34px] flex-1 cursor-pointer rounded-[3px] text-[13px] font-bold"
+                  style={{
+                    backgroundColor: colors.inactiveTabBg,
+                    color: colors.inactiveTabText,
+                  }}
+                >
+                  {isBangla ? "পার্সোনাল অটো" : "Personal Auto"}
+                </button>
+              ) : null}
             </div>
 
             {loadingStatus ? (
@@ -771,6 +802,7 @@ const AutoDepositModal = ({ open, onClose, onDepositClick }) => {
         </div>
       )}
     </AnimatePresence>
+    </>
   );
 };
 

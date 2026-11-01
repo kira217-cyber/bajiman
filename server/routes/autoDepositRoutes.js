@@ -40,7 +40,8 @@ function safeString(value = "") {
   return String(value || "").trim();
 }
 
-function normalizeEligibleProviders(value) {
+// Shared with the Personal Auto Deposit routes (mfsDepositRoutes.js)
+export function normalizeEligibleProviders(value) {
   if (!Array.isArray(value)) return [];
 
   return value
@@ -51,7 +52,7 @@ function normalizeEligibleProviders(value) {
     .filter((item) => item.providerCode);
 }
 
-function sumPercent(list) {
+export function sumPercent(list) {
   return (Array.isArray(list) ? list : []).reduce(
     (sum, item) => sum + Number(item?.percent || 0),
     0,
@@ -81,7 +82,7 @@ function defaultSelectedBonus() {
   };
 }
 
-function computeBonus({ amount, selectedBonus }) {
+export function computeBonus({ amount, selectedBonus }) {
   const depositAmount = normalizeMoney(amount, 0);
 
   if (!selectedBonus) {

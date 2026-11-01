@@ -7,6 +7,8 @@ import { toast } from "react-toastify";
 import api from "../../api/axios";
 import { useLanguage } from "../../Context/LanguageProvider";
 import AutoDepositModal from "../AutoDepositModal/AutoDepositModal";
+import MfsDepositModal from "../MfsDepositModal/MfsDepositModal";
+import useMfsStatus from "../../hook/useMfsStatus";
 import { selectModalColorSetting } from "../../features/global/globalSelectors";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -100,6 +102,7 @@ const DepositFundsModal = ({ open, onClose, onNext }) => {
   const [selectedPromoId, setSelectedPromoId] = useState("none");
   const [amount, setAmount] = useState("");
   const [promoOpen, setPromoOpen] = useState(false);
+  const { enabled: mfsEnabled } = useMfsStatus(open);
 
   useEffect(() => {
     if (open) {
@@ -397,6 +400,20 @@ const DepositFundsModal = ({ open, onClose, onNext }) => {
                 >
                   {t.autoDeposit}
                 </button>
+
+                {mfsEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveModal("mfs")}
+                  className="h-[34px] flex-1 cursor-pointer rounded-[3px] text-[13px] font-bold"
+                  style={{
+                    backgroundColor: colors.inactiveTabBg,
+                    color: colors.inactiveTabText,
+                  }}
+                >
+                  {isBangla ? "পার্সোনাল অটো" : "Personal Auto"}
+                </button>
+              ) : null}
               </div>
 
               <div
@@ -787,6 +804,13 @@ const DepositFundsModal = ({ open, onClose, onNext }) => {
         open={open && activeModal === "auto"}
         onClose={onClose}
         onDepositClick={() => setActiveModal("deposit")}
+      />
+
+      <MfsDepositModal
+        open={open && activeModal === "mfs"}
+        onClose={onClose}
+        onDepositClick={() => setActiveModal("deposit")}
+        onAutoClick={() => setActiveModal("auto")}
       />
     </>
   );

@@ -17,6 +17,7 @@ import Footer from "../components/Footer/Footer";
 import CheckInLauncher from "../components/CheckInLauncher/CheckInLauncher";
 import WheelLauncher from "../components/WheelLauncher/WheelLauncher";
 import DownloadAppBanner from "../components/DownloadAppBanner/DownloadAppBanner";
+import MfsReturnNotice from "../components/MfsReturnNotice/MfsReturnNotice";
 
 const RootLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -47,6 +48,7 @@ const RootLayout = () => {
       <SiteIdentity />
       <CheckInLauncher />
       <WheelLauncher />
+      <MfsReturnNotice />
 
       <Sidebar
         open={sidebarOpen}
