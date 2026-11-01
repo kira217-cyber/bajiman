@@ -4,6 +4,7 @@ import DepositRequest from "../models/DepositRequest.js";
 import AutoDeposit from "../models/AutoDeposit.js";
 import WithdrawRequest from "../models/WithdrawRequest.js";
 import Game from "../models/Game.js";
+import Admin from "../models/Admin.js";
 import MfsDeposit from "../models/MfsDeposit.js";
 import AutoWithdraw from "../models/AutoWithdraw.js";
 import AffWithdrawRequest from "../models/AffWithdrawRequest.js";
@@ -153,6 +154,8 @@ router.get("/summary", protectAdmin, async (req, res) => {
 
       breakdown,
       pending,
+      totalUserBalance,
+      adminCount,
     ] = await Promise.all([
       User.countDocuments({ role: "user" }),
       User.countDocuments({ role: "user", isActive: true }),
@@ -199,6 +202,8 @@ router.get("/summary", protectAdmin, async (req, res) => {
 
       moneyBreakdown(dayRange()),
       pendingCounts(),
+      sumField(User, { role: "user" }, "balance"),
+      Admin.countDocuments({}),
     ]);
 
     const allDepositBalances =
@@ -207,7 +212,7 @@ router.get("/summary", protectAdmin, async (req, res) => {
       breakdown.personalDeposit.total;
     const allWithdrawBalances = approvedWithdrawAmount + breakdown.autoWithdraw.total;
     const pendingDepositAll =
-      pendingDepositRequest + pendingAutoDepositCount + pending["mfs-deposit-history"];
+      pendingDepositRequest + pending["auto-deposit-history"] + pending["mfs-deposit-history"];
     const pendingWithdrawAll = pendingWithdrawRequest + pending["auto-withdraw-history"];
 
     const totalUsersForChart = allUsers;
@@ -224,6 +229,8 @@ router.get("/summary", protectAdmin, async (req, res) => {
         allWithdrawBalances,
         pendingDepositRequest: pendingDepositAll,
         pendingWithdrawRequest: pendingWithdrawAll,
+        totalUserBalance,
+        adminCount,
       },
 
       breakdown,
@@ -307,6 +314,7 @@ router.get("/today", protectAdmin, async (req, res) => {
     ]);
 
     const day = Object.fromEntries(Object.keys(DONE).map((key, i) => [key, dayMoney[i].total]));
+    const count = Object.fromEntries(Object.keys(DONE).map((key, i) => [key, dayMoney[i].count]));
     const allDepositBalances = day.manualDeposit + day.autoDeposit + day.personalDeposit;
 
     return successResponse(res, "Dashboard today summary loaded", {
@@ -324,6 +332,28 @@ router.get("/today", protectAdmin, async (req, res) => {
         pendingWithdrawRequest: pendingWithdrawRequest + pendingAutoWithdraw,
       },
       money: day,
+      // one card per path, like the other sites' dashboards
+      split: {
+        newUsers: allUsers,
+        newAffiliates: allAffiliateUsers,
+        deposit: day.manualDeposit,
+        withdraw: day.manualWithdraw,
+        depositCount: count.manualDeposit,
+        withdrawCount: count.manualWithdraw,
+        pendingDeposit: pendingDepositRequest,
+        pendingWithdraw: pendingWithdrawRequest,
+        autoDeposit: day.autoDeposit,
+        autoWithdraw: day.autoWithdraw,
+        autoDepositCount: count.autoDeposit,
+        autoWithdrawCount: count.autoWithdraw,
+        pendingAutoDeposit: pendingAutoDepositCount,
+        pendingAutoWithdraw: pendingAutoWithdraw,
+        mfsDeposit: day.personalDeposit,
+        mfsDepositCount: count.personalDeposit,
+        pendingMfsDeposit: pendingPersonalDeposit,
+        netCash:
+          day.manualDeposit + day.autoDeposit + day.personalDeposit - day.manualWithdraw - day.autoWithdraw,
+      },
     });
   } catch (error) {
     console.error("DASHBOARD TODAY ERROR:", error);

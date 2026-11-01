@@ -19,12 +19,16 @@ import {
   FaMoneyBillWave,
   FaRobot,
   FaHandHoldingUsd,
+  FaCoins,
+  FaReceipt,
+  FaDownload,
 } from "react-icons/fa";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 import { api } from "../../api/axios";
 import PendingBadge from "../PendingBadge/PendingBadge";
 import { PENDING_ITEMS, usePending } from "../../features/pending/usePending";
+import { NOTIFICATION_APK } from "../../pages/NotificationApp/NotificationApp";
 
 const money = (value) => {
   const num = Number(value || 0);
@@ -137,7 +141,7 @@ const Dashboard = () => {
       const res = await api.get("/api/dashboard/today", {
         params: { date: dateStr },
       });
-      setTodayCards(res?.data?.data?.cards || emptyTodayCards);
+      setTodayCards(res?.data?.data?.split || emptyTodayCards);
     } catch (error) {
       console.error(error);
       toast.error(
@@ -199,29 +203,39 @@ const Dashboard = () => {
         to: "/withdraw-requests",
       },
       {
-        title: "All Games",
-        value: c.allGames || 0,
-        icon: <FaGamepad />,
-        to: "/add-game",
+        title: "Total User Balance",
+        value: money(c.totalUserBalance),
+        icon: <FaCoins />,
+        to: "/all-users",
       },
     ];
   }, [summary]);
 
-  // Same 8 metrics as above, scoped to whichever date is selected on the
-  // calendar (defaults to today) — a fresh fetch every date change, since
-  // this is inherently a "figures reset each day" view.
+  // Whichever date is selected on the calendar (defaults to today), one
+  // card per money path — a fresh fetch every date change, since this is
+  // inherently a "figures reset each day" view.
   const todayCardsList = useMemo(() => {
     const c = todayCards || {};
 
     return [
-      { title: "All Users", value: c.allUsers || 0, icon: <FaUsers />, to: "/all-users" },
-      { title: "Active Users", value: c.activeUsers || 0, icon: <FaUserCheck />, to: "/all-users" },
-      { title: "All Affiliate Users", value: c.allAffiliateUsers || 0, icon: <FaUserFriends />, to: "/all-affiliate-users" },
-      { title: "All Deposit Balances", value: money(c.allDepositBalances), icon: <FaArrowCircleDown />, to: "/auto-deposit-history" },
-      { title: "Pending Deposit Request", value: c.pendingDepositRequest || 0, icon: <FaHourglassHalf />, to: "/deposit-requests" },
-      { title: "All Withdraw Balance", value: money(c.allWithdrawBalances), icon: <FaArrowCircleUp />, to: "/withdraw-requests" },
-      { title: "Pending Withdraw Request", value: c.pendingWithdrawRequest || 0, icon: <FaWallet />, to: "/withdraw-requests" },
-      { title: "All Games", value: c.allGames || 0, icon: <FaGamepad />, to: "/add-game" },
+      { title: "New Users", value: c.newUsers || 0, icon: <FaUsers />, to: "/all-users" },
+      { title: "New Affiliates", value: c.newAffiliates || 0, icon: <FaUserFriends />, to: "/all-affiliate-users" },
+      { title: "Net Cash (in − out)", value: money(c.netCash), icon: <FaCoins />, to: "/auto-deposit-history" },
+      { title: "Manual Deposit", value: money(c.deposit), icon: <FaArrowCircleDown />, to: "/deposit-requests" },
+      { title: "Manual Withdraw", value: money(c.withdraw), icon: <FaArrowCircleUp />, to: "/withdraw-requests" },
+      { title: "Manual Deposit Count", value: c.depositCount || 0, icon: <FaReceipt />, to: "/deposit-requests" },
+      { title: "Manual Withdraw Count", value: c.withdrawCount || 0, icon: <FaReceipt />, to: "/withdraw-requests" },
+      { title: "Pending Manual Deposit", value: c.pendingDeposit || 0, icon: <FaHourglassHalf />, to: "/deposit-requests", alert: true },
+      { title: "Pending Manual Withdraw", value: c.pendingWithdraw || 0, icon: <FaHourglassHalf />, to: "/withdraw-requests", alert: true },
+      { title: "Auto Deposit", value: money(c.autoDeposit), icon: <FaRobot />, to: "/auto-deposit-history" },
+      { title: "Auto Withdraw", value: money(c.autoWithdraw), icon: <FaRobot />, to: "/auto-withdraw-history" },
+      { title: "Auto Deposit Count", value: c.autoDepositCount || 0, icon: <FaReceipt />, to: "/auto-deposit-history" },
+      { title: "Auto Withdraw Count", value: c.autoWithdrawCount || 0, icon: <FaReceipt />, to: "/auto-withdraw-history" },
+      { title: "Pending Auto Deposit", value: c.pendingAutoDeposit || 0, icon: <FaHourglassHalf />, to: "/auto-deposit-history", alert: true },
+      { title: "Pending Auto Withdraw", value: c.pendingAutoWithdraw || 0, icon: <FaHourglassHalf />, to: "/auto-withdraw-history", alert: true },
+      { title: "Personal Auto Deposit", value: money(c.mfsDeposit), icon: <FaMobileAlt />, to: "/mfs-deposit-history" },
+      { title: "Personal Auto Deposit Count", value: c.mfsDepositCount || 0, icon: <FaReceipt />, to: "/mfs-deposit-history" },
+      { title: "Personal Auto Deposit Review", value: c.pendingMfsDeposit || 0, icon: <FaHourglassHalf />, to: "/mfs-deposit-history", alert: true },
     ];
   }, [todayCards]);
 
@@ -351,6 +365,15 @@ const Dashboard = () => {
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-3">
+            <a
+              href={NOTIFICATION_APK}
+              download="notification.apk"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#1A79D3]/30 bg-[#1A79D3]/10 px-5 py-3 font-bold text-[#1A79D3] transition hover:bg-[#1A79D3]/20"
+            >
+              <FaDownload />
+              Notification App
+            </a>
             <button
               type="button"
               onClick={fetchDashboard}
@@ -360,6 +383,7 @@ const Dashboard = () => {
               <FaSyncAlt className={loading ? "animate-spin" : ""} />
               {loading ? "Refreshing..." : "Refresh Data"}
             </button>
+            </div>
           </div>
         </div>
 
@@ -538,7 +562,11 @@ const Dashboard = () => {
                   key={card.title}
                   type="button"
                   onClick={() => navigate(card.to)}
-                  className="cursor-pointer text-left rounded-[28px] border border-[#1A79D3]/15 bg-white p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#1A79D3]/60"
+                  className={`cursor-pointer text-left rounded-[28px] border p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#1A79D3]/60 ${
+                    card.alert && Number(card.value) > 0
+                      ? "ad-pending-card bg-red-50"
+                      : "border-[#1A79D3]/15 bg-white"
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -805,6 +833,8 @@ const Dashboard = () => {
                   {[
                     ["Total Users", summary?.cards?.allUsers || 0],
                     ["Affiliate Users", summary?.cards?.allAffiliateUsers || 0],
+                    ["Admin Accounts", summary?.cards?.adminCount || 0],
+                    ["Total User Balance", money(summary?.cards?.totalUserBalance)],
                     ["Total Games", summary?.cards?.allGames || 0],
                     ["Active Games", summary?.cards?.activeGames || 0],
                     [
