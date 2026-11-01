@@ -117,6 +117,11 @@ const CreateAdmin = () => {
         label: "All Turnover History",
         path: "/all-turnover-history",
       },
+      {
+        key: "turnover-fill",
+        label: "Turnover Fill-up",
+        path: "/turnover-fill",
+      },
 
       {
         key: "add-withdraw",

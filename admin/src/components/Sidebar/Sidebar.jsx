@@ -33,6 +33,7 @@ import {
   FaTools,
   FaMobileAlt,
   FaTrophy,
+  FaFillDrip,
 } from "react-icons/fa";
 import { FaShareAlt } from "react-icons/fa";
 import {
@@ -245,10 +246,16 @@ const Sidebar = () => {
         text: "Personal Deposit History",
       },
       {
-        key: "all-turnover-history",
+        key: "add-turnover-history",
         to: "/all-turnover-history",
         icon: <FaHistory />,
         text: "All Turnover History",
+      },
+      {
+        key: "turnover-fill",
+        to: "/turnover-fill",
+        icon: <FaFillDrip />,
+        text: "Turnover Fill-up",
       },
     ],
     [],
@@ -347,7 +354,7 @@ const Sidebar = () => {
         text: "Add Game API Key",
       },
       {
-        key: "all-game-history",
+        key: "add-game-history",
         to: "/all-game-history",
         icon: <FaHistory />,
         text: "All Game History",

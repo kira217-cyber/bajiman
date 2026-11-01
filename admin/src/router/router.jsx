@@ -55,6 +55,7 @@ import AffSiteIdentify from "../pages/AffSiteIdentify/AffSiteIdentify";
 
 import FooterSetting from "../pages/FooterSetting/FooterSetting";
 import AllTurnOverHistory from "../pages/AllTurnOverHistory/AllTurnOverHistory";
+import TurnoverFill from "../pages/TurnoverFill/TurnoverFill";
 import NavbarColorSetting from "../pages/NavbarColorSetting/NavbarColorSetting";
 import SidebarColorSetting from "../pages/SidebarColorSetting/SidebarColorSetting";
 import CategorySectionSetting from "../pages/CategorySectionSetting/CategorySectionSetting";
@@ -416,6 +417,14 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="add-turnover-history">
             <AllTurnOverHistory />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "turnover-fill",
+        element: (
+          <PrivateRoute permKey="turnover-fill">
+            <TurnoverFill />
           </PrivateRoute>
         ),
       },

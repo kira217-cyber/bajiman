@@ -2,6 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import TurnOver from "../models/TurnOver.js";
 import User from "../models/User.js";
+import TurnoverFill from "../models/TurnoverFill.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
 import protectUser from "../middleware/protectUser.js";
 
@@ -255,6 +256,177 @@ router.get("/admin/user/:userId", protectAdmin, async (req, res) => {
 });
 
 /* ---------------- ADMIN: SINGLE TURNOVER DETAILS ---------------- */
+/* ---------------- ADMIN: TURNOVER FILL-UP ---------------- */
+// (registered before /admin/:id so "fills" is never read as an id)
+
+const cleanText = (value) => String(value ?? "").trim();
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const round2 = (value) => Math.round(safeNumber(value) * 100) / 100;
+
+const withPercent = (row) => ({
+  ...row,
+  remaining: Math.max(0, round2(safeNumber(row.required) - safeNumber(row.progress))),
+  percent: row.required
+    ? Math.min(100, Math.round((safeNumber(row.progress) / safeNumber(row.required)) * 100))
+    : 100,
+});
+
+// Find players (userId or phone) with their running turnover
+router.get("/admin/fill/find", protectAdmin, async (req, res) => {
+  try {
+    const q = cleanText(req.query.q).toLowerCase();
+
+    if (q.length < 2) {
+      return res.json({ success: true, message: "Type at least 2 characters", data: { users: [] } });
+    }
+
+    const rx = { $regex: escapeRegex(q.replace(/^0(?=\d{10}$)/, "")), $options: "i" };
+    const users = await User.find({ role: "user", $or: [{ userId: rx }, { phone: rx }] })
+      .select("userId phone balance isActive")
+      .limit(8)
+      .lean();
+
+    const running = await TurnOver.find({
+      user: { $in: users.map((u) => u._id) },
+      status: "running",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        users: users.map((user) => ({
+          ...user,
+          turnovers: running
+            .filter((row) => String(row.user) === String(user._id))
+            .map(withPercent),
+        })),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/*
+ * Fill running turnover — all of the player's when `turnoverIds` is empty.
+ *
+ * Each one changes in a single step on `status: "running"` (progress =
+ * required), so a double click fills it once and one that finished through
+ * play in the meantime is skipped. What was filled is kept in TurnoverFill.
+ */
+router.post("/admin/fill", protectAdmin, async (req, res) => {
+  try {
+    const userId = cleanText(req.body?.userId);
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Choose a player" });
+    }
+
+    const user = await User.findOne({ _id: userId, role: "user" }).select("userId").lean();
+
+    if (!user) return res.status(404).json({ success: false, message: "Player not found" });
+
+    const ids = (Array.isArray(req.body?.turnoverIds) ? req.body.turnoverIds : []).filter((id) =>
+      mongoose.Types.ObjectId.isValid(String(id)),
+    );
+    const filter = {
+      user: user._id,
+      status: "running",
+      ...(ids.length ? { _id: { $in: ids } } : {}),
+    };
+    const targets = await TurnOver.find(filter).select("_id").lean();
+
+    if (!targets.length) {
+      return res.status(400).json({ success: false, message: "No running turnover to fill" });
+    }
+
+    const items = [];
+
+    for (const { _id } of targets) {
+      const before = await TurnOver.findOneAndUpdate(
+        { _id, status: "running" },
+        [{ $set: { progress: "$required", status: "completed", completedAt: "$$NOW" } }],
+        { returnDocument: "before", updatePipeline: true },
+      ).lean();
+
+      if (!before) continue;
+
+      items.push({
+        turnover: before._id,
+        sourceType: before.sourceType,
+        required: round2(before.required),
+        progressBefore: round2(before.progress),
+        filled: round2(Math.max(0, safeNumber(before.required) - safeNumber(before.progress))),
+      });
+    }
+
+    if (!items.length) {
+      return res.status(400).json({ success: false, message: "No running turnover to fill" });
+    }
+
+    const fill = await TurnoverFill.create({
+      user: user._id,
+      userIdText: user.userId,
+      admin: req.admin?._id || null,
+      adminEmail: req.admin?.email || "",
+      items,
+      count: items.length,
+      totalFilled: round2(items.reduce((sum, item) => sum + item.filled, 0)),
+      note: cleanText(req.body?.note).slice(0, 300),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `${items.length} turnover filled`,
+      data: { fill },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Fill history — newest first; `q` = userId
+router.get("/admin/fills", protectAdmin, async (req, res) => {
+  try {
+    const page = safePage(req.query.page);
+    const limit = safeLimit(req.query.limit || 20);
+    const q = cleanText(req.query.q).toLowerCase();
+    const filter = q
+      ? { userIdText: { $regex: escapeRegex(q.replace(/^0(?=\d{10}$)/, "")), $options: "i" } }
+      : {};
+
+    const [fills, total, totals] = await Promise.all([
+      TurnoverFill.find(filter)
+        .populate("user", "userId phone balance role")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      TurnoverFill.countDocuments(filter),
+      TurnoverFill.aggregate([
+        { $match: filter },
+        { $group: { _id: null, filled: { $sum: "$totalFilled" }, count: { $sum: "$count" } } },
+      ]),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        fills,
+        summary: {
+          totalFilled: round2(totals[0]?.filled),
+          turnovers: safeNumber(totals[0]?.count),
+        },
+        meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get("/admin/:id", protectAdmin, async (req, res) => {
   try {
     const doc = await TurnOver.findById(req.params.id)
