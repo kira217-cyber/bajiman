@@ -138,6 +138,12 @@ const Sidebar = () => {
         text: "Create Admin",
       },
       {
+        key: "__mother__",
+        to: "/notification-app",
+        icon: <FaBell />,
+        text: "Notification App",
+      },
+      {
         key: "add-promotion",
         to: "/add-promotion",
         icon: <GrAnnounce />,

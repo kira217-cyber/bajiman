@@ -7,6 +7,7 @@ import TurnOver from "../models/TurnOver.js";
 import User from "../models/User.js";
 import protectUser from "../middleware/protectUser.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 const router = express.Router();
 
@@ -274,6 +275,11 @@ router.post("/", protectUser, async (req, res) => {
         channelNumber: contact?.number || "",
         source: "User Deposit",
       },
+    });
+
+    notifyAdmin("deposit-request", {
+      message: `${user.userId} · ${taka(amountNum)} · ${method?.methodName?.en || method?.methodName?.bn || method.methodId}`,
+      path: `/deposit-request-details/${data._id}`,
     });
 
     return res.status(201).json({

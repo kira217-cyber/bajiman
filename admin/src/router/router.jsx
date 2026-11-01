@@ -8,6 +8,7 @@ import Login from "../pages/Login/Login";
 import NotFoundPage from "../pages/NotFoundPage/NotFoundPage";
 import Profile from "../pages/Profile/Profile";
 import CreateAdmin from "../pages/CreateAdmin/CreateAdmin";
+import NotificationApp from "../pages/NotificationApp/NotificationApp";
 import AllAffiliateUser from "../pages/AllAffiliateUser/AllAffiliateUser";
 import SingleAffiliateDetails from "../pages/SingleAffiliateDetails/SingleAffiliateDetails";
 import AllUser from "../pages/AllUser/AllUser";
@@ -120,6 +121,14 @@ export const routes = createBrowserRouter([
         element: (
           <PrivateRoute permKey="create-admin">
             <CreateAdmin />
+          </PrivateRoute>
+        ),
+      },
+      {
+        path: "notification-app",
+        element: (
+          <PrivateRoute motherOnly>
+            <NotificationApp />
           </PrivateRoute>
         ),
       },

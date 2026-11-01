@@ -16,6 +16,7 @@ import {
   normalizeEligibleProviders,
   sumPercent,
 } from "./autoDepositRoutes.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 /*
  * Personal Auto Deposit (MFSWallet) — /api/mfs-deposit
@@ -585,6 +586,10 @@ async function creditDeposit(filter, patch = {}) {
     { returnDocument: "after" },
   ).select("referredBy");
 
+  notifyAdmin("mfs-deposit", {
+    message: `${deposit.userIdText} · ${taka(deposit.amount)} · ${deposit.method}`,
+  });
+
   // Referring affiliate's deposit commission (% of the deposit itself)
   if (user?.referredBy) {
     const affiliator = await User.findById(user.referredBy).select(
@@ -709,10 +714,19 @@ router.post("/webhook/:kind/:key", async (req, res) => {
 
     if (expected === "PENDING") {
       // The gateway could not match it — admin confirms or rejects by hand
-      await MfsDeposit.updateOne(
-        { _id: existing._id, status: "PENDING", balanceAdded: false },
+      const marked = await MfsDeposit.updateOne(
+        { _id: existing._id, status: "PENDING", balanceAdded: false, needsReview: false },
         { $set: { needsReview: true, ...filled(info) } },
       );
+
+      // only the first time it needs review (a repeated webhook stays quiet)
+      if (marked.modifiedCount) {
+        notifyAdmin("mfs-review", {
+          message: `${existing.userIdText} · ${taka(existing.amount)} · ${existing.method}${
+            info.gatewayMessage ? ` · ${info.gatewayMessage}` : ""
+          }`,
+        });
+      }
 
       return successResponse(res, "Pending recorded");
     }

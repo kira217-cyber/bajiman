@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
 import { successResponse, errorResponse } from "../utils/response.js";
 import { protectAdmin } from "../middleware/protectAdmin.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 const router = express.Router();
 
@@ -164,6 +165,11 @@ router.post("/register", async (req, res) => {
       referralCode,
     });
 
+    notifyAdmin("affiliate-register", {
+      message: `${user.userId} · ${user.countryCode || ""}${user.phone || ""} — approval needed`,
+      path: `/single-affiliate-details/${user._id}`,
+    });
+
     return successResponse(
       res,
       "Affiliate registration successful. Admin approval required before login.",
@@ -228,6 +234,11 @@ router.post("/login", async (req, res) => {
       id: user._id,
       userId: user.userId,
       role: user.role,
+    });
+
+    notifyAdmin("affiliate-login", {
+      message: `${user.userId}`,
+      path: `/single-affiliate-details/${user._id}`,
     });
 
     return successResponse(res, "Affiliate login successful", {

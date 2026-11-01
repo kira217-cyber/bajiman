@@ -10,6 +10,7 @@ import TurnOver from "../models/TurnOver.js";
 
 import { protectAdmin } from "../middleware/protectAdmin.js";
 import protectUser from "../middleware/protectUser.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 const router = express.Router();
 
@@ -996,6 +997,12 @@ async function processDepositWebhook(data) {
         eligibleProviders: deposit?.selectedBonus?.eligibleProviders || [],
       });
     }
+
+    notifyAdmin("auto-deposit", {
+      message: `${user.userId || ""} · ${taka(deposit.amount)}${
+        deposit?.calc?.bonusAmount ? ` + bonus ${taka(deposit.calc.bonusAmount)}` : ""
+      }`,
+    });
 
     console.log("✅ auto deposit webhook processed:", {
       invoiceNumber,

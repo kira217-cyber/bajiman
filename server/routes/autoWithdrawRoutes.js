@@ -17,6 +17,7 @@ import { getOrCreateOtpSetting } from "./otpSettingRoutes.js";
 import { checkUserOtp, consumeUserOtp } from "./eWalletRoutes.js";
 import { checkEligibility } from "./withdrawRequestRoutes.js";
 import { lockWithdraw, unlockWithdraw } from "../utils/withdrawLock.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 const router = express.Router();
 
@@ -480,6 +481,10 @@ router.post("/create", protectUser, async (req, res) => {
     if (otpSetting.withdrawEnabled) {
       consumeUserOtp(userId);
     }
+
+    notifyAdmin("auto-withdraw", {
+      message: `${user.userId || ""} · ${taka(amount)} · ${methodCode}`,
+    });
 
     return res.status(201).json({
       success: true,

@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import protectUser from "../middleware/protectUser.js";
 import { protectAdmin, requireMother } from "../middleware/protectAdmin.js";
 import { successResponse, errorResponse } from "../utils/response.js";
+import { notifyAdmin, taka } from "../utils/adminNotify.js";
 
 const router = express.Router();
 
@@ -267,6 +268,10 @@ router.post("/aff-withdraw-requests", protectUser, async (req, res) => {
       status: "pending",
       balanceBefore,
       balanceAfter,
+    });
+
+    notifyAdmin("aff-withdraw", {
+      message: `${user.userId || ""} · ${taka(amount)} · ${methodId}`,
     });
 
     return successResponse(
